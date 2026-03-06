@@ -292,7 +292,8 @@ async def exchange_session(request: Request, response: Response):
         "name": user["name"],
         "picture": user.get("picture"),
         "kyc_status": user.get("kyc_status", "pending"),
-        "trust_score": user.get("trust_score", 50)
+        "trust_score": user.get("trust_score", 50),
+        "session_token": session_token  # Include token for mobile fallback
     }
 
 @api_router.get("/auth/me")

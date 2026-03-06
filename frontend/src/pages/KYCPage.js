@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useLanguage } from '../context/LanguageContext';
@@ -15,7 +15,7 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 export default function KYCPage() {
   const { t } = useLanguage();
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, isAuthenticated, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(1);
@@ -29,6 +29,13 @@ export default function KYCPage() {
     country: 'FR'
   });
 
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      navigate('/login');
+    }
+  }, [authLoading, isAuthenticated, navigate]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -38,11 +45,21 @@ export default function KYCPage() {
       toast.success('Vérification KYC réussie !');
       navigate('/dashboard');
     } catch (error) {
+      console.error('KYC error:', error);
       toast.error(error.response?.data?.detail || t('common.error'));
     } finally {
       setLoading(false);
     }
   };
+
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#F9FAFB] flex items-center justify-center py-12 px-4">
+        <Loader2 className="w-10 h-10 text-[#2E5C55] animate-spin" />
+      </div>
+    );
+  }
 
   if (user?.kyc_status === 'verified') {
     return (
