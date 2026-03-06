@@ -18,7 +18,8 @@ import {
   ShieldCheck,
   AlertCircle,
   Wallet,
-  Star
+  Star,
+  Loader2
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -96,7 +97,7 @@ const TontineCard = ({ tontine, t }) => {
 
 export default function DashboardPage() {
   const { t } = useLanguage();
-  const { user } = useAuth();
+  const { user, loading: authLoading, checkAuth } = useAuth();
   const navigate = useNavigate();
   const [tontines, setTontines] = useState([]);
   const [wallet, setWallet] = useState(null);
@@ -123,7 +124,19 @@ export default function DashboardPage() {
     fetchData();
   }, []);
 
-  // KYC Warning
+  // Wait for auth to fully load
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#F9FAFB] flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-10 h-10 text-[#2E5C55] animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">Chargement...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // KYC Warning - only show after auth is fully loaded
   if (user?.kyc_status !== 'verified') {
     return (
       <div className="min-h-screen bg-[#F9FAFB] p-6" data-testid="dashboard-kyc-required">

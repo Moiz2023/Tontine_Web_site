@@ -189,6 +189,9 @@ async def register(user_data: UserCreate, response: Response):
         "user_id": user_id,
         "email": user_data.email,
         "name": user_data.name,
+        "phone": user_data.phone,
+        "kyc_status": "pending",
+        "trust_score": 50,
         "token": token
     }
 
@@ -216,6 +219,10 @@ async def login(credentials: UserLogin, response: Response):
         "user_id": user["user_id"],
         "email": user["email"],
         "name": user["name"],
+        "phone": user.get("phone"),
+        "picture": user.get("picture"),
+        "kyc_status": user.get("kyc_status", "pending"),
+        "trust_score": user.get("trust_score", 50),
         "token": token
     }
 
