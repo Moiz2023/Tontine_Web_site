@@ -841,7 +841,7 @@ async def update_settings(request: Request, user: dict = Depends(get_current_use
 # ============ ADMIN ROUTES ============
 
 # Admin email whitelist - add your email here for admin access
-ADMIN_EMAILS = ["admin@tontine.com"]
+ADMIN_EMAILS = ["admin@tontine.com", "slimimoez@gmail.com"]
 
 async def verify_admin(user: dict):
     """Verify user has admin privileges"""
