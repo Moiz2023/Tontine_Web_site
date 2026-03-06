@@ -383,12 +383,12 @@ const LanguageContext = createContext();
 
 export const LanguageProvider = ({ children }) => {
   const [language, setLanguage] = useState(() => {
-    const saved = localStorage.getItem('tontine_language');
+    const saved = localStorage.getItem('savyn_language');
     return saved || 'fr';
   });
 
   useEffect(() => {
-    localStorage.setItem('tontine_language', language);
+    localStorage.setItem('savyn_language', language);
   }, [language]);
 
   const t = useCallback((key) => {

@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
 
 class TontineAPITester:
-    def __init__(self, base_url="https://group-fund-7.preview.emergentagent.com/api"):
+    def __init__(self, base_url="https://trustfundy-staging.preview.emergentagent.com/api"):
         self.base_url = base_url
         self.session = requests.Session()
         self.session.headers.update({'Content-Type': 'application/json'})

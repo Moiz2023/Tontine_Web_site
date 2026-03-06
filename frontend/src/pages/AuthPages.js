@@ -44,7 +44,7 @@ export default function LoginPage() {
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
           <div className="text-center mb-8">
             <Link to="/" className="inline-block">
-              <h1 className="text-2xl font-bold text-[#2E5C55]">Tontine</h1>
+              <h1 className="text-2xl font-bold text-[#2E5C55]">Savyn</h1>
             </Link>
             <h2 className="text-2xl font-bold text-gray-900 mt-6">{t('auth.login_title')}</h2>
           </div>
@@ -172,7 +172,7 @@ export function RegisterPage() {
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
           <div className="text-center mb-8">
             <Link to="/" className="inline-block">
-              <h1 className="text-2xl font-bold text-[#2E5C55]">Tontine</h1>
+              <h1 className="text-2xl font-bold text-[#2E5C55]">Savyn</h1>
             </Link>
             <h2 className="text-2xl font-bold text-gray-900 mt-6">{t('auth.register_title')}</h2>
           </div>

@@ -173,7 +173,7 @@ export default function LandingPage() {
               viewport={{ once: true }}
               className="text-3xl sm:text-4xl font-bold text-gray-900 mb-4"
             >
-              Pourquoi choisir Tontine ?
+              Pourquoi choisir Savyn ?
             </motion.h2>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -308,7 +308,7 @@ export default function LandingPage() {
               {
                 name: 'Marie L.',
                 role: 'Membre depuis 2024',
-                text: "Grâce à Tontine, j'ai pu financer ma nouvelle voiture. Le système est simple et fiable.",
+                text: "Grâce à Savyn, j'ai pu financer ma nouvelle voiture. Le système est simple et fiable.",
                 rating: 5
               },
               {

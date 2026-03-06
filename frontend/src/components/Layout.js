@@ -57,9 +57,9 @@ export const Navbar = () => {
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2">
             <div className="w-10 h-10 rounded-xl bg-[#2E5C55] flex items-center justify-center">
-              <span className="text-white font-bold text-lg">T</span>
+              <span className="text-white font-bold text-lg">S</span>
             </div>
-            <span className="text-xl font-bold text-gray-900 hidden sm:block">Tontine</span>
+            <span className="text-xl font-bold text-gray-900 hidden sm:block">Savyn</span>
           </Link>
 
           {/* Desktop Nav Links */}
@@ -231,12 +231,12 @@ export const Footer = () => {
           <div>
             <div className="flex items-center gap-2 mb-4">
               <div className="w-10 h-10 rounded-xl bg-[#2E5C55] flex items-center justify-center">
-                <span className="text-white font-bold text-lg">T</span>
+                <span className="text-white font-bold text-lg">S</span>
               </div>
-              <span className="text-xl font-bold text-gray-900">Tontine</span>
+              <span className="text-xl font-bold text-gray-900">Savyn</span>
             </div>
             <p className="text-gray-600 text-sm">
-              L'épargne collective sécurisée et automatisée.
+              L'épargne collective sécurisée et automatisée par Savyn.
             </p>
           </div>
           
@@ -261,14 +261,14 @@ export const Footer = () => {
           <div>
             <h4 className="font-semibold text-gray-900 mb-4">Contact</h4>
             <ul className="space-y-2 text-sm text-gray-600">
-              <li>support@tontine.com</li>
+              <li>support@savyn.com</li>
               <li>+33 1 23 45 67 89</li>
             </ul>
           </div>
         </div>
         
         <div className="mt-12 pt-8 border-t border-gray-100 text-center text-sm text-gray-500">
-          <p>© 2025 Tontine. Tous droits réservés.</p>
+          <p>© 2025 Savyn. Tous droits réservés.</p>
         </div>
       </div>
     </footer>

@@ -30,7 +30,7 @@ JWT_EXPIRY_DAYS = 7
 STRIPE_API_KEY = os.environ.get('STRIPE_API_KEY', 'sk_test_emergent')
 
 # Create the main app
-app = FastAPI(title="Tontine Platform API")
+app = FastAPI(title="Savyn API")
 
 # Create router with /api prefix
 api_router = APIRouter(prefix="/api")
@@ -433,13 +433,24 @@ async def list_tontines(status: Optional[str] = None, user: dict = Depends(get_c
     
     tontines = await db.tontines.find(query, {"_id": 0}).to_list(100)
     
-    # Calculate average trust score for each tontine
+    # Batch fetch all participant trust scores to avoid N+1 queries
+    all_user_ids = set()
+    for t in tontines:
+        for p in t.get("participants", []):
+            all_user_ids.add(p["user_id"])
+    
+    user_scores = {}
+    if all_user_ids:
+        users = await db.users.find(
+            {"user_id": {"$in": list(all_user_ids)}},
+            {"_id": 0, "user_id": 1, "trust_score": 1}
+        ).to_list(len(all_user_ids))
+        user_scores = {u["user_id"]: u.get("trust_score", 50) for u in users}
+    
     for t in tontines:
         participants = t.get("participants", [])
         if participants:
-            user_ids = [p["user_id"] for p in participants]
-            users = await db.users.find({"user_id": {"$in": user_ids}}, {"_id": 0, "trust_score": 1}).to_list(100)
-            scores = [u.get("trust_score", 50) for u in users]
+            scores = [user_scores.get(p["user_id"], 50) for p in participants]
             t["avg_trust_score"] = sum(scores) // len(scores) if scores else 50
         t["spots_left"] = t["max_participants"] - len(participants)
     
@@ -450,15 +461,26 @@ async def marketplace_tontines():
     """Public marketplace - no auth required"""
     tontines = await db.tontines.find({"status": "open"}, {"_id": 0}).to_list(50)
     
+    # Batch fetch all participant trust scores to avoid N+1 queries
+    all_user_ids = set()
+    for t in tontines:
+        for p in t.get("participants", []):
+            all_user_ids.add(p["user_id"])
+    
+    user_scores = {}
+    if all_user_ids:
+        users = await db.users.find(
+            {"user_id": {"$in": list(all_user_ids)}},
+            {"_id": 0, "user_id": 1, "trust_score": 1}
+        ).to_list(len(all_user_ids))
+        user_scores = {u["user_id"]: u.get("trust_score", 50) for u in users}
+    
     for t in tontines:
         participants = t.get("participants", [])
         if participants:
-            user_ids = [p["user_id"] for p in participants]
-            users = await db.users.find({"user_id": {"$in": user_ids}}, {"_id": 0, "trust_score": 1}).to_list(100)
-            scores = [u.get("trust_score", 50) for u in users]
+            scores = [user_scores.get(p["user_id"], 50) for p in participants]
             t["avg_trust_score"] = sum(scores) // len(scores) if scores else 50
         t["spots_left"] = t["max_participants"] - len(participants)
-        # Hide participant details for privacy
         t["participant_count"] = len(participants)
         del t["participants"]
     
@@ -840,8 +862,8 @@ async def update_settings(request: Request, user: dict = Depends(get_current_use
 
 # ============ ADMIN ROUTES ============
 
-# Admin email whitelist - add your email here for admin access
-ADMIN_EMAILS = ["admin@tontine.com", "slimimoez@gmail.com"]
+# Admin email whitelist from environment variable
+ADMIN_EMAILS = [e.strip() for e in os.environ.get('ADMIN_EMAILS', '').split(',') if e.strip()]
 
 async def verify_admin(user: dict):
     """Verify user has admin privileges"""
@@ -924,7 +946,7 @@ async def make_user_admin(user_id: str, user: dict = Depends(get_current_user)):
 
 @api_router.get("/")
 async def root():
-    return {"message": "Tontine Platform API", "version": "1.0.0"}
+    return {"message": "Savyn API", "version": "1.0.0"}
 
 # Include router
 app.include_router(api_router)
