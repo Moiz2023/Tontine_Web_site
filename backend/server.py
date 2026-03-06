@@ -150,6 +150,23 @@ async def get_current_user(request: Request) -> dict:
 
 # ============ AUTH ROUTES ============
 
+import re
+import html
+
+# XSS Sanitization helper
+def sanitize_input(text: str) -> str:
+    """Remove potential XSS payloads from user input"""
+    if not text:
+        return text
+    # First, remove script tags and dangerous patterns BEFORE escaping
+    text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r'<[^>]+>', '', text)  # Remove all HTML tags
+    text = re.sub(r'on\w+\s*=', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'javascript:', '', text, flags=re.IGNORECASE)
+    # Then HTML escape any remaining dangerous characters
+    text = html.escape(text)
+    return text.strip()
+
 @api_router.post("/auth/register")
 async def register(user_data: UserCreate, response: Response):
     existing = await db.users.find_one({"email": user_data.email})
@@ -159,11 +176,15 @@ async def register(user_data: UserCreate, response: Response):
     user_id = f"user_{uuid.uuid4().hex[:12]}"
     now = datetime.now(timezone.utc).isoformat()
     
+    # Sanitize user inputs
+    sanitized_name = sanitize_input(user_data.name)
+    sanitized_phone = sanitize_input(user_data.phone) if user_data.phone else None
+    
     user_doc = {
         "user_id": user_id,
         "email": user_data.email,
-        "name": user_data.name,
-        "phone": user_data.phone,
+        "name": sanitized_name,
+        "phone": sanitized_phone,
         "password_hash": hash_password(user_data.password),
         "picture": None,
         "kyc_status": "pending",
@@ -188,8 +209,8 @@ async def register(user_data: UserCreate, response: Response):
     return {
         "user_id": user_id,
         "email": user_data.email,
-        "name": user_data.name,
-        "phone": user_data.phone,
+        "name": sanitized_name,
+        "phone": sanitized_phone,
         "kyc_status": "pending",
         "trust_score": 50,
         "token": token
@@ -749,16 +770,30 @@ async def get_trust_score(user: dict = Depends(get_current_user)):
         created_at = created_at.replace(tzinfo=timezone.utc)
     account_age_days = (datetime.now(timezone.utc) - created_at).days
     
+    # Calculate breakdown
+    breakdown = {
+        "base_score": 50,
+        "payment_bonus": min(successful_payments * 2, 30),
+        "participation_bonus": min(tontines_count * 5, 15),
+        "account_age_bonus": min(account_age_days // 30, 5),
+        "kyc_bonus": 10 if user.get("kyc_status") == "verified" else 0
+    }
+    
+    # Calculate actual trust score from breakdown
+    calculated_score = sum(breakdown.values())
+    
+    # Update user's trust score if different
+    stored_score = user.get("trust_score", 50)
+    if calculated_score != stored_score:
+        await db.users.update_one(
+            {"user_id": user["user_id"]},
+            {"$set": {"trust_score": calculated_score}}
+        )
+    
     return {
-        "trust_score": user.get("trust_score", 50),
-        "breakdown": {
-            "base_score": 50,
-            "payment_bonus": min(successful_payments * 2, 30),
-            "participation_bonus": min(tontines_count * 5, 15),
-            "account_age_bonus": min(account_age_days // 30, 5),
-            "kyc_bonus": 10 if user.get("kyc_status") == "verified" else 0
-        },
-        "level": "Gold" if user.get("trust_score", 50) >= 80 else "Silver" if user.get("trust_score", 50) >= 60 else "Bronze"
+        "trust_score": calculated_score,
+        "breakdown": breakdown,
+        "level": "Gold" if calculated_score >= 80 else "Silver" if calculated_score >= 60 else "Bronze"
     }
 
 # ============ SUPPORT ROUTES ============
@@ -770,8 +805,8 @@ async def create_ticket(ticket: SupportTicket, user: dict = Depends(get_current_
         "ticket_id": f"ticket_{uuid.uuid4().hex[:12]}",
         "user_id": user["user_id"],
         "user_email": user["email"],
-        "subject": ticket.subject,
-        "message": ticket.message,
+        "subject": sanitize_input(ticket.subject),
+        "message": sanitize_input(ticket.message),
         "category": ticket.category,
         "status": "open",
         "created_at": now,
@@ -805,12 +840,19 @@ async def update_settings(request: Request, user: dict = Depends(get_current_use
 
 # ============ ADMIN ROUTES ============
 
+# Admin email whitelist - add your email here for admin access
+ADMIN_EMAILS = ["admin@tontine.com"]
+
+async def verify_admin(user: dict):
+    """Verify user has admin privileges"""
+    is_admin = user.get("is_admin", False) or user.get("email") in ADMIN_EMAILS
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return True
+
 @api_router.get("/admin/stats")
 async def admin_stats(user: dict = Depends(get_current_user)):
-    # Simple admin check (in production, use proper role-based access)
-    if user.get("email") not in ["admin@tontine.com"]:
-        # Allow all verified users for MVP demo
-        pass
+    await verify_admin(user)
     
     total_users = await db.users.count_documents({})
     verified_users = await db.users.count_documents({"kyc_status": "verified"})
@@ -818,9 +860,13 @@ async def admin_stats(user: dict = Depends(get_current_user)):
     active_tontines = await db.tontines.count_documents({"status": "active"})
     total_payments = await db.payment_transactions.count_documents({"payment_status": "paid"})
     
-    # Calculate total volume
-    payments = await db.payment_transactions.find({"payment_status": "paid"}, {"_id": 0, "amount": 1}).to_list(10000)
-    total_volume = sum(p.get("amount", 0) for p in payments)
+    # Calculate total volume using aggregation (more efficient)
+    pipeline = [
+        {"$match": {"payment_status": "paid"}},
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
+    ]
+    result = await db.payment_transactions.aggregate(pipeline).to_list(1)
+    total_volume = result[0]["total"] if result else 0
     
     return {
         "users": {"total": total_users, "verified": verified_users},
@@ -831,21 +877,30 @@ async def admin_stats(user: dict = Depends(get_current_user)):
 
 @api_router.get("/admin/users")
 async def admin_list_users(user: dict = Depends(get_current_user)):
+    await verify_admin(user)
+    # Sanitize output - hide sensitive fields
     users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(500)
+    # Sanitize names for display
+    for u in users:
+        if u.get("name"):
+            u["name"] = html.escape(u["name"])
     return users
 
 @api_router.get("/admin/tontines")
 async def admin_list_tontines(user: dict = Depends(get_current_user)):
+    await verify_admin(user)
     tontines = await db.tontines.find({}, {"_id": 0}).to_list(500)
     return tontines
 
 @api_router.get("/admin/tickets")
 async def admin_list_tickets(user: dict = Depends(get_current_user)):
+    await verify_admin(user)
     tickets = await db.support_tickets.find({}, {"_id": 0}).to_list(500)
     return tickets
 
 @api_router.put("/admin/tickets/{ticket_id}")
 async def admin_update_ticket(ticket_id: str, request: Request, user: dict = Depends(get_current_user)):
+    await verify_admin(user)
     body = await request.json()
     now = datetime.now(timezone.utc).isoformat()
     
@@ -854,6 +909,16 @@ async def admin_update_ticket(ticket_id: str, request: Request, user: dict = Dep
         {"$set": {"status": body.get("status", "open"), "admin_response": body.get("response"), "updated_at": now}}
     )
     return {"message": "Ticket updated"}
+
+# Endpoint to make a user admin (protected - only existing admins can use)
+@api_router.post("/admin/make-admin/{user_id}")
+async def make_user_admin(user_id: str, user: dict = Depends(get_current_user)):
+    await verify_admin(user)
+    await db.users.update_one(
+        {"user_id": user_id},
+        {"$set": {"is_admin": True}}
+    )
+    return {"message": f"User {user_id} is now an admin"}
 
 # ============ ROOT ============
 

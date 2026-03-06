@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useLanguage } from '../context/LanguageContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -21,7 +22,8 @@ import {
   Shield,
   Eye,
   CheckCircle,
-  XCircle
+  XCircle,
+  Lock
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -45,11 +47,13 @@ const StatCard = ({ icon: Icon, title, value, subtitle, color }) => (
 
 export default function AdminPage() {
   const { t } = useLanguage();
+  const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]);
   const [tontines, setTontines] = useState([]);
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [accessDenied, setAccessDenied] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
@@ -70,7 +74,11 @@ export default function AdminPage() {
       setTickets(ticketsRes.data);
     } catch (error) {
       console.error('Error fetching admin data:', error);
-      toast.error('Erreur lors du chargement des données');
+      if (error.response?.status === 403) {
+        setAccessDenied(true);
+      } else {
+        toast.error('Erreur lors du chargement des données');
+      }
     } finally {
       setLoading(false);
     }
@@ -85,6 +93,33 @@ export default function AdminPage() {
       toast.error('Erreur lors de la mise à jour');
     }
   };
+
+  // Access denied screen
+  if (accessDenied) {
+    return (
+      <div className="min-h-screen bg-[#F9FAFB] flex items-center justify-center p-6">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="bg-white rounded-2xl border border-gray-100 p-8 text-center max-w-md"
+        >
+          <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-6">
+            <Lock className="w-8 h-8 text-red-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Accès refusé</h2>
+          <p className="text-gray-600 mb-6">
+            Vous n'avez pas les permissions nécessaires pour accéder au panneau d'administration.
+          </p>
+          <Button
+            onClick={() => navigate('/dashboard')}
+            className="bg-[#2E5C55] hover:bg-[#254a44] text-white rounded-full px-8"
+          >
+            Retour au tableau de bord
+          </Button>
+        </motion.div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
