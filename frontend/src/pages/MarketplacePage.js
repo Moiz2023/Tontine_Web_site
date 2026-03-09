@@ -8,6 +8,7 @@ import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
 import { Progress } from '../components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
 import { toast } from 'sonner';
 import axios from 'axios';
 import { 
@@ -18,7 +19,9 @@ import {
   Filter,
   TrendingUp,
   Clock,
-  ArrowRight
+  ArrowRight,
+  FileText,
+  Loader2
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -119,6 +122,9 @@ export default function MarketplacePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('newest');
   const [filterAmount, setFilterAmount] = useState('all');
+  const [contractDialog, setContractDialog] = useState({ open: false, tontine: null });
+  const [contractAccepted, setContractAccepted] = useState(false);
+  const [joining, setJoining] = useState(false);
 
   useEffect(() => {
     fetchTontines();
@@ -142,17 +148,32 @@ export default function MarketplacePage() {
     }
 
     if (user.kyc_status !== 'verified') {
-      toast.error('Vous devez compléter la vérification KYC pour rejoindre une tontine.');
+      toast.error('Vous devez completer la verification KYC pour rejoindre une tontine.');
       navigate('/kyc');
       return;
     }
 
+    // Open contract dialog
+    const tontine = tontines.find(t => t.tontine_id === tontineId);
+    setContractDialog({ open: true, tontine });
+    setContractAccepted(false);
+  };
+
+  const confirmJoin = async () => {
+    if (!contractAccepted || !contractDialog.tontine) return;
+    setJoining(true);
     try {
-      await axios.post(`${API}/tontines/join`, { tontine_id: tontineId }, { withCredentials: true });
+      await axios.post(`${API}/tontines/join`, { 
+        tontine_id: contractDialog.tontine.tontine_id,
+        accept_contract: true 
+      }, { withCredentials: true });
       toast.success('Vous avez rejoint la tontine !');
-      navigate(`/tontines/${tontineId}`);
+      setContractDialog({ open: false, tontine: null });
+      navigate(`/tontines/${contractDialog.tontine.tontine_id}`);
     } catch (error) {
       toast.error(error.response?.data?.detail || t('common.error'));
+    } finally {
+      setJoining(false);
     }
   };
 
@@ -297,6 +318,72 @@ export default function MarketplacePage() {
             ))}
           </div>
         )}
+
+        {/* Digital Contract Dialog */}
+        <Dialog open={contractDialog.open} onOpenChange={(open) => setContractDialog({ ...contractDialog, open })}>
+          <DialogContent className="max-w-lg" data-testid="contract-dialog">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-[#2E5C55]" />
+                Contrat Digital de Participation
+              </DialogTitle>
+            </DialogHeader>
+            {contractDialog.tontine && (
+              <div className="space-y-4">
+                <div className="bg-gray-50 rounded-lg p-4 text-sm space-y-2 max-h-60 overflow-y-auto">
+                  <p className="font-semibold text-gray-900">Tontine : {contractDialog.tontine.name}</p>
+                  <p>Montant mensuel : <strong>{contractDialog.tontine.monthly_amount}EUR</strong></p>
+                  <p>Nombre de participants : <strong>{contractDialog.tontine.max_participants}</strong></p>
+                  <hr className="my-3" />
+                  <p className="font-semibold">En rejoignant cette tontine, vous vous engagez a :</p>
+                  <ul className="list-disc pl-5 space-y-1 text-gray-700">
+                    <li>Effectuer tous les paiements mensuels a la date prevue</li>
+                    <li>Autoriser le prelevement SEPA automatique sur votre compte</li>
+                    <li>Respecter les regles du groupe et le calendrier de distribution</li>
+                    <li>Accepter la procedure de recouvrement legal en cas de defaut de paiement</li>
+                    <li>Contribuer au fonds de garantie (3% de chaque contribution)</li>
+                  </ul>
+                  <hr className="my-3" />
+                  <p className="text-xs text-gray-500">
+                    Les fonds sont detenus par un prestataire de paiement agree (Lemon Way). 
+                    Savyn n'a jamais acces direct a votre argent.
+                  </p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    id="accept_contract"
+                    checked={contractAccepted}
+                    onChange={(e) => setContractAccepted(e.target.checked)}
+                    className="mt-1 w-4 h-4 rounded border-gray-300 text-[#2E5C55] focus:ring-[#2E5C55]"
+                    data-testid="contract-accept-checkbox"
+                  />
+                  <label htmlFor="accept_contract" className="text-sm text-gray-700">
+                    J'ai lu et j'accepte les conditions du contrat digital de participation
+                  </label>
+                </div>
+              </div>
+            )}
+            <DialogFooter className="gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setContractDialog({ open: false, tontine: null })}
+                data-testid="contract-cancel-btn"
+              >
+                Annuler
+              </Button>
+              <Button
+                onClick={confirmJoin}
+                disabled={!contractAccepted || joining}
+                className="bg-[#2E5C55] hover:bg-[#254a44] text-white"
+                data-testid="contract-confirm-btn"
+              >
+                {joining ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                Signer et Rejoindre
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

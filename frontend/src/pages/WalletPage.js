@@ -64,6 +64,25 @@ export default function WalletPage() {
     </Card>
   );
 
+  const handleExport = async () => {
+    try {
+      const response = await axios.get(`${API}/wallet/export`, { 
+        withCredentials: true,
+        responseType: 'blob'
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'savyn_releve.csv');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export error:', error);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#F9FAFB] p-6">
@@ -92,7 +111,7 @@ export default function WalletPage() {
             <h1 className="text-3xl font-bold text-gray-900 mb-2">{t('wallet.title')}</h1>
             <p className="text-gray-600">Suivez vos contributions et vos gains.</p>
           </div>
-          <Button variant="outline" className="rounded-full" data-testid="wallet-export-btn">
+          <Button variant="outline" className="rounded-full" data-testid="wallet-export-btn" onClick={handleExport}>
             <Download className="w-5 h-5 mr-2" />
             {t('wallet.export')}
           </Button>

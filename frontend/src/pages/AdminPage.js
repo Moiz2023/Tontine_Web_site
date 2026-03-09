@@ -23,7 +23,12 @@ import {
   Eye,
   CheckCircle,
   XCircle,
-  Lock
+  Lock,
+  AlertTriangle,
+  Ban,
+  UserCheck,
+  BarChart3,
+  DollarSign
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -55,6 +60,8 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [fraudAlerts, setFraudAlerts] = useState([]);
+  const [analytics, setAnalytics] = useState(null);
 
   useEffect(() => {
     fetchAdminData();
@@ -72,12 +79,24 @@ export default function AdminPage() {
       setUsers(usersRes.data);
       setTontines(tontinesRes.data);
       setTickets(ticketsRes.data);
+
+      // Fetch fraud alerts and analytics (non-blocking)
+      try {
+        const [fraudRes, analyticsRes] = await Promise.all([
+          axios.get(`${API}/admin/fraud-alerts`, { withCredentials: true }),
+          axios.get(`${API}/admin/analytics`, { withCredentials: true })
+        ]);
+        setFraudAlerts(fraudRes.data?.alerts || []);
+        setAnalytics(analyticsRes.data);
+      } catch (e) {
+        console.error('Error fetching fraud/analytics:', e);
+      }
     } catch (error) {
       console.error('Error fetching admin data:', error);
       if (error.response?.status === 403) {
         setAccessDenied(true);
       } else {
-        toast.error('Erreur lors du chargement des données');
+        toast.error('Erreur lors du chargement des donnees');
       }
     } finally {
       setLoading(false);
@@ -87,10 +106,46 @@ export default function AdminPage() {
   const updateTicketStatus = async (ticketId, status, response = '') => {
     try {
       await axios.put(`${API}/admin/tickets/${ticketId}`, { status, response }, { withCredentials: true });
-      toast.success('Ticket mis à jour');
+      toast.success('Ticket mis a jour');
       fetchAdminData();
     } catch (error) {
-      toast.error('Erreur lors de la mise à jour');
+      toast.error('Erreur lors de la mise a jour');
+    }
+  };
+
+  const handleSuspend = async (userId, suspend) => {
+    try {
+      await axios.post(`${API}/admin/suspend/${userId}`, 
+        { suspend, reason: suspend ? 'Suspendu par admin' : '' },
+        { withCredentials: true }
+      );
+      toast.success(suspend ? 'Compte suspendu' : 'Compte reactif');
+      fetchAdminData();
+    } catch (error) {
+      toast.error('Erreur: ' + (error.response?.data?.detail || 'Erreur inconnue'));
+    }
+  };
+
+  const handleKycUpdate = async (userId, status) => {
+    try {
+      await axios.put(`${API}/admin/kyc/${userId}`, 
+        { status },
+        { withCredentials: true }
+      );
+      toast.success(`KYC ${status === 'verified' ? 'approuve' : 'rejete'}`);
+      fetchAdminData();
+    } catch (error) {
+      toast.error('Erreur: ' + (error.response?.data?.detail || 'Erreur inconnue'));
+    }
+  };
+
+  const handleTriggerPayout = async (tontineId) => {
+    try {
+      const res = await axios.post(`${API}/admin/trigger-payout/${tontineId}`, {}, { withCredentials: true });
+      toast.success(res.data.message);
+      fetchAdminData();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erreur payout');
     }
   };
 
@@ -201,6 +256,14 @@ export default function AdminPage() {
             <TabsTrigger value="tickets" className="rounded-lg" data-testid="admin-tab-tickets">
               {t('admin.tickets')} ({tickets.length})
             </TabsTrigger>
+            <TabsTrigger value="fraud" className="rounded-lg" data-testid="admin-tab-fraud">
+              <AlertTriangle className="w-4 h-4 mr-1" />
+              Fraude ({fraudAlerts.length})
+            </TabsTrigger>
+            <TabsTrigger value="analytics" className="rounded-lg" data-testid="admin-tab-analytics">
+              <BarChart3 className="w-4 h-4 mr-1" />
+              Analytics
+            </TabsTrigger>
           </TabsList>
 
           {/* Users Tab */}
@@ -229,34 +292,73 @@ export default function AdminPage() {
                       <TableHead>Email</TableHead>
                       <TableHead>KYC</TableHead>
                       <TableHead>Score</TableHead>
+                      <TableHead>Statut</TableHead>
                       <TableHead>Inscrit le</TableHead>
+                      <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredUsers.map((user) => (
-                      <TableRow key={user.user_id}>
-                        <TableCell className="font-medium">{user.name}</TableCell>
-                        <TableCell className="text-gray-600">{user.email}</TableCell>
+                    {filteredUsers.map((u) => (
+                      <TableRow key={u.user_id} className={u.is_suspended ? 'bg-red-50' : ''}>
+                        <TableCell className="font-medium">{u.name}</TableCell>
+                        <TableCell className="text-gray-600">{u.email}</TableCell>
                         <TableCell>
                           <Badge
                             className={
-                              user.kyc_status === 'verified' ? 'bg-green-100 text-green-700' :
-                              user.kyc_status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                              u.kyc_status === 'verified' ? 'bg-green-100 text-green-700' :
+                              u.kyc_status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
                               'bg-red-100 text-red-700'
                             }
                           >
-                            {user.kyc_status === 'verified' ? 'Vérifié' :
-                             user.kyc_status === 'pending' ? 'En attente' : 'Rejeté'}
+                            {u.kyc_status === 'verified' ? 'Verifie' :
+                             u.kyc_status === 'pending' ? 'En attente' : 'Rejete'}
                           </Badge>
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <Shield className="w-4 h-4 text-[#2E5C55]" />
-                            <span>{user.trust_score || 50}</span>
+                            <span>{u.trust_score || 50}</span>
                           </div>
                         </TableCell>
+                        <TableCell>
+                          {u.is_suspended ? (
+                            <Badge className="bg-red-100 text-red-700">Suspendu</Badge>
+                          ) : (
+                            <Badge className="bg-green-100 text-green-700">Actif</Badge>
+                          )}
+                        </TableCell>
                         <TableCell className="text-gray-500">
-                          {user.created_at ? format(new Date(user.created_at), 'dd/MM/yyyy', { locale: fr }) : '-'}
+                          {u.created_at ? format(new Date(u.created_at), 'dd/MM/yyyy', { locale: fr }) : '-'}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            {u.kyc_status === 'pending' && (
+                              <>
+                                <Button size="sm" variant="outline" className="text-green-600 h-8 px-2"
+                                  onClick={() => handleKycUpdate(u.user_id, 'verified')}
+                                  data-testid={`kyc-approve-${u.user_id}`}
+                                  title="Approuver KYC"
+                                >
+                                  <UserCheck className="w-4 h-4" />
+                                </Button>
+                                <Button size="sm" variant="outline" className="text-red-600 h-8 px-2"
+                                  onClick={() => handleKycUpdate(u.user_id, 'rejected')}
+                                  data-testid={`kyc-reject-${u.user_id}`}
+                                  title="Rejeter KYC"
+                                >
+                                  <XCircle className="w-4 h-4" />
+                                </Button>
+                              </>
+                            )}
+                            <Button size="sm" variant="outline" 
+                              className={u.is_suspended ? "text-green-600 h-8 px-2" : "text-red-600 h-8 px-2"}
+                              onClick={() => handleSuspend(u.user_id, !u.is_suspended)}
+                              data-testid={`suspend-${u.user_id}`}
+                              title={u.is_suspended ? "Reactiver" : "Suspendre"}
+                            >
+                              <Ban className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -277,15 +379,16 @@ export default function AdminPage() {
                       <TableHead>Montant</TableHead>
                       <TableHead>Participants</TableHead>
                       <TableHead>Statut</TableHead>
-                      <TableHead>Collecté</TableHead>
-                      <TableHead>Créé le</TableHead>
+                      <TableHead>Cycle</TableHead>
+                      <TableHead>Collecte</TableHead>
+                      <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {tontines.map((tontine) => (
                       <TableRow key={tontine.tontine_id}>
                         <TableCell className="font-medium">{tontine.name}</TableCell>
-                        <TableCell>{tontine.monthly_amount}€/mois</TableCell>
+                        <TableCell>{tontine.monthly_amount}EUR/mois</TableCell>
                         <TableCell>
                           {tontine.participants?.length || 0}/{tontine.max_participants}
                         </TableCell>
@@ -298,14 +401,25 @@ export default function AdminPage() {
                             }
                           >
                             {tontine.status === 'active' ? 'Actif' :
-                             tontine.status === 'open' ? 'Ouvert' : 'Terminé'}
+                             tontine.status === 'open' ? 'Ouvert' : 'Termine'}
                           </Badge>
                         </TableCell>
-                        <TableCell className="font-medium text-[#2E5C55]">
-                          {tontine.total_collected?.toFixed(2) || '0.00'}€
+                        <TableCell>
+                          {tontine.current_cycle || '-'}/{tontine.participants?.length || tontine.max_participants}
                         </TableCell>
-                        <TableCell className="text-gray-500">
-                          {tontine.created_at ? format(new Date(tontine.created_at), 'dd/MM/yyyy', { locale: fr }) : '-'}
+                        <TableCell className="font-medium text-[#2E5C55]">
+                          {tontine.total_collected?.toFixed(2) || '0.00'}EUR
+                        </TableCell>
+                        <TableCell>
+                          {tontine.status === 'active' && (
+                            <Button size="sm" variant="outline" className="text-[#2E5C55] h-8"
+                              onClick={() => handleTriggerPayout(tontine.tontine_id)}
+                              data-testid={`payout-${tontine.tontine_id}`}
+                            >
+                              <DollarSign className="w-4 h-4 mr-1" />
+                              Payout
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -324,7 +438,7 @@ export default function AdminPage() {
                     <TableRow>
                       <TableHead>Sujet</TableHead>
                       <TableHead>Utilisateur</TableHead>
-                      <TableHead>Catégorie</TableHead>
+                      <TableHead>Categorie</TableHead>
                       <TableHead>Statut</TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead>Actions</TableHead>
@@ -350,7 +464,7 @@ export default function AdminPage() {
                               'bg-green-100 text-green-700'
                             }
                           >
-                            {ticket.status === 'open' ? 'Ouvert' : 'Fermé'}
+                            {ticket.status === 'open' ? 'Ouvert' : 'Ferme'}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-gray-500">
@@ -362,7 +476,7 @@ export default function AdminPage() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => updateTicketStatus(ticket.ticket_id, 'closed', 'Ticket résolu')}
+                                onClick={() => updateTicketStatus(ticket.ticket_id, 'closed', 'Ticket resolu')}
                                 className="text-green-600 hover:text-green-700"
                               >
                                 <CheckCircle className="w-4 h-4" />
@@ -376,6 +490,129 @@ export default function AdminPage() {
                 </Table>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Fraud Detection Tab */}
+          <TabsContent value="fraud">
+            <Card className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <CardHeader className="border-b border-gray-100 bg-[#F9FAFB]">
+                <CardTitle className="flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-orange-500" />
+                  Detection de Fraude
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-6">
+                {fraudAlerts.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Shield className="w-12 h-12 text-green-500 mx-auto mb-3" />
+                    <p className="text-gray-600 font-medium">Aucune alerte detectee</p>
+                    <p className="text-sm text-gray-400">Le systeme surveille en permanence les activites suspectes</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {fraudAlerts.map((alert, i) => (
+                      <div key={i} className={`p-4 rounded-lg border ${
+                        alert.severity === 'high' ? 'border-red-200 bg-red-50' :
+                        alert.severity === 'medium' ? 'border-orange-200 bg-orange-50' :
+                        'border-blue-200 bg-blue-50'
+                      }`} data-testid={`fraud-alert-${i}`}>
+                        <div className="flex items-start gap-3">
+                          <AlertTriangle className={`w-5 h-5 mt-0.5 ${
+                            alert.severity === 'high' ? 'text-red-500' :
+                            alert.severity === 'medium' ? 'text-orange-500' :
+                            'text-blue-500'
+                          }`} />
+                          <div>
+                            <p className="font-medium text-gray-900">{alert.message}</p>
+                            <p className="text-sm text-gray-500 mt-1">
+                              Type: {alert.type} | Severite: {alert.severity}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Analytics Tab */}
+          <TabsContent value="analytics">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <Card className="bg-white rounded-2xl border border-gray-100 shadow-sm">
+                <CardHeader>
+                  <CardTitle className="text-base">Distribution des Tontines</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {analytics?.tontine_distribution ? (
+                    <div className="space-y-3">
+                      {Object.entries(analytics.tontine_distribution).map(([status, count]) => (
+                        <div key={status} className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600 capitalize">{status}</span>
+                          <div className="flex items-center gap-2">
+                            <div className="w-32 bg-gray-100 rounded-full h-2">
+                              <div className={`h-2 rounded-full ${
+                                status === 'active' ? 'bg-green-500' :
+                                status === 'open' ? 'bg-blue-500' : 'bg-gray-400'
+                              }`} style={{width: `${Math.min((count / Math.max(...Object.values(analytics.tontine_distribution))) * 100, 100)}%`}} />
+                            </div>
+                            <span className="font-semibold text-sm w-8 text-right">{count}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : <p className="text-gray-400 text-sm">Aucune donnee</p>}
+                </CardContent>
+              </Card>
+
+              <Card className="bg-white rounded-2xl border border-gray-100 shadow-sm">
+                <CardHeader>
+                  <CardTitle className="text-base">Distribution KYC</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {analytics?.kyc_distribution ? (
+                    <div className="space-y-3">
+                      {Object.entries(analytics.kyc_distribution).map(([status, count]) => (
+                        <div key={status} className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600 capitalize">{status}</span>
+                          <div className="flex items-center gap-2">
+                            <div className="w-32 bg-gray-100 rounded-full h-2">
+                              <div className={`h-2 rounded-full ${
+                                status === 'verified' ? 'bg-green-500' :
+                                status === 'pending' ? 'bg-yellow-500' : 'bg-red-500'
+                              }`} style={{width: `${Math.min((count / Math.max(...Object.values(analytics.kyc_distribution))) * 100, 100)}%`}} />
+                            </div>
+                            <span className="font-semibold text-sm w-8 text-right">{count}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : <p className="text-gray-400 text-sm">Aucune donnee</p>}
+                </CardContent>
+              </Card>
+
+              <Card className="bg-white rounded-2xl border border-gray-100 shadow-sm md:col-span-2">
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <DollarSign className="w-5 h-5 text-[#2E5C55]" />
+                    Lemon Way - Statut Integration
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-4 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                    <div className="w-3 h-3 rounded-full bg-yellow-400 animate-pulse" />
+                    <div>
+                      <p className="font-medium text-gray-900">Mode Sandbox (Simule)</p>
+                      <p className="text-sm text-gray-600">
+                        Les paiements et versements sont simules. Pour activer le mode reel, 
+                        configurez les cles API Lemon Way dans les parametres.
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
       </div>

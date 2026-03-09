@@ -46,6 +46,7 @@ class UserCreate(BaseModel):
     password: str
     name: str
     phone: Optional[str] = None
+    accept_terms: bool = False
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -92,6 +93,10 @@ class SupportTicket(BaseModel):
     subject: str
     message: str
     category: str = "general"
+
+class TontineContract(BaseModel):
+    tontine_id: str
+    accept_contract: bool = False
 
 # ============ AUTH HELPERS ============
 
@@ -169,6 +174,9 @@ def sanitize_input(text: str) -> str:
 
 @api_router.post("/auth/register")
 async def register(user_data: UserCreate, response: Response):
+    if not user_data.accept_terms:
+        raise HTTPException(status_code=400, detail="Vous devez accepter les conditions d'utilisation")
+    
     existing = await db.users.find_one({"email": user_data.email})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -190,6 +198,8 @@ async def register(user_data: UserCreate, response: Response):
         "kyc_status": "pending",
         "trust_score": 50,
         "language": "fr",
+        "is_suspended": False,
+        "terms_accepted_at": now,
         "created_at": now,
         "updated_at": now
     }
@@ -217,13 +227,38 @@ async def register(user_data: UserCreate, response: Response):
     }
 
 @api_router.post("/auth/login")
-async def login(credentials: UserLogin, response: Response):
+async def login(credentials: UserLogin, request: Request, response: Response):
     user = await db.users.find_one({"email": credentials.email}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
+    if user.get("is_suspended"):
+        raise HTTPException(status_code=403, detail="Votre compte est suspendu. Contactez le support.")
+    
     if not verify_password(credentials.password, user.get("password_hash", "")):
+        # Track failed login attempts for fraud detection
+        now = datetime.now(timezone.utc).isoformat()
+        ip = request.client.host if request.client else "unknown"
+        await db.login_attempts.insert_one({
+            "email": credentials.email,
+            "ip": ip,
+            "success": False,
+            "timestamp": now
+        })
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    # Track successful login
+    now = datetime.now(timezone.utc).isoformat()
+    ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "unknown")
+    await db.login_attempts.insert_one({
+        "email": credentials.email,
+        "user_id": user["user_id"],
+        "ip": ip,
+        "user_agent": user_agent,
+        "success": True,
+        "timestamp": now
+    })
     
     token = create_jwt_token(user["user_id"], user["email"])
     response.set_cookie(
@@ -510,9 +545,15 @@ async def get_tontine(tontine_id: str, user: dict = Depends(get_current_user)):
     return tontine
 
 @api_router.post("/tontines/join")
-async def join_tontine(join_data: TontineJoin, user: dict = Depends(get_current_user)):
+async def join_tontine(join_data: TontineContract, user: dict = Depends(get_current_user)):
     if user.get("kyc_status") != "verified":
         raise HTTPException(status_code=403, detail="KYC verification required")
+    
+    if user.get("is_suspended"):
+        raise HTTPException(status_code=403, detail="Votre compte est suspendu")
+    
+    if not join_data.accept_contract:
+        raise HTTPException(status_code=400, detail="Vous devez accepter le contrat digital pour rejoindre la tontine")
     
     tontine = await db.tontines.find_one({"tontine_id": join_data.tontine_id}, {"_id": 0})
     if not tontine:
@@ -534,10 +575,16 @@ async def join_tontine(join_data: TontineJoin, user: dict = Depends(get_current_
         raise HTTPException(status_code=400, detail="Already joined this tontine")
     
     now = datetime.now(timezone.utc).isoformat()
+    
+    # Smart attribution: new users go to end, high-score users get better positions
+    # For fixed mode, newcomers always go last (natural order)
+    # Position is simply next available
+    position = len(participants) + 1
+    
     new_participant = {
         "user_id": user["user_id"],
         "name": user["name"],
-        "position": len(participants) + 1,
+        "position": position,
         "joined_at": now,
         "payments_made": 0,
         "received_payout": False
@@ -551,14 +598,64 @@ async def join_tontine(join_data: TontineJoin, user: dict = Depends(get_current_
         }
     )
     
-    # Check if tontine is now full -> activate
-    if len(participants) + 1 >= tontine["max_participants"]:
-        await db.tontines.update_one(
-            {"tontine_id": join_data.tontine_id},
-            {"$set": {"status": "active"}}
-        )
+    # Store digital contract
+    contract_doc = {
+        "contract_id": f"contract_{uuid.uuid4().hex[:12]}",
+        "user_id": user["user_id"],
+        "tontine_id": join_data.tontine_id,
+        "contract_type": "participation",
+        "terms": {
+            "monthly_amount": tontine["monthly_amount"],
+            "duration_months": tontine["duration_months"],
+            "max_participants": tontine["max_participants"],
+            "guarantee_fee_pct": 3,
+            "obligations": [
+                "Effectuer tous les paiements mensuels à temps",
+                "Autoriser le prélèvement SEPA automatique",
+                "Accepter la procédure de recouvrement en cas de défaut"
+            ]
+        },
+        "accepted_at": now,
+        "ip_address": "recorded"
+    }
+    await db.contracts.insert_one(contract_doc)
     
-    return {"message": "Successfully joined tontine", "position": len(participants) + 1}
+    # Check if tontine is now full -> activate and apply smart attribution
+    if len(participants) + 1 >= tontine["max_participants"]:
+        # Smart attribution for non-fixed modes
+        if tontine.get("attribution_mode") == "random":
+            import random
+            all_participants = participants + [new_participant]
+            random.shuffle(all_participants)
+            for i, p in enumerate(all_participants):
+                p["position"] = i + 1
+            await db.tontines.update_one(
+                {"tontine_id": join_data.tontine_id},
+                {"$set": {"status": "active", "participants": all_participants, "current_cycle": 1}}
+            )
+        else:
+            # Fixed mode: keep order but apply smart positioning
+            # High trust score users get earlier positions, new users at end
+            all_participants = participants + [new_participant]
+            # Fetch trust scores
+            user_ids = [p["user_id"] for p in all_participants]
+            users_data = await db.users.find(
+                {"user_id": {"$in": user_ids}},
+                {"_id": 0, "user_id": 1, "trust_score": 1, "created_at": 1}
+            ).to_list(len(user_ids))
+            score_map = {u["user_id"]: u.get("trust_score", 50) for u in users_data}
+            
+            # Sort: higher trust score first, then by join date (earlier first)
+            all_participants.sort(key=lambda p: (-score_map.get(p["user_id"], 50), p.get("joined_at", "")))
+            for i, p in enumerate(all_participants):
+                p["position"] = i + 1
+            
+            await db.tontines.update_one(
+                {"tontine_id": join_data.tontine_id},
+                {"$set": {"status": "active", "participants": all_participants, "current_cycle": 1}}
+            )
+    
+    return {"message": "Successfully joined tontine", "position": position, "contract_id": contract_doc["contract_id"]}
 
 @api_router.get("/tontines/user/active")
 async def get_user_tontines(user: dict = Depends(get_current_user)):
@@ -941,6 +1038,350 @@ async def make_user_admin(user_id: str, user: dict = Depends(get_current_user)):
         {"$set": {"is_admin": True}}
     )
     return {"message": f"User {user_id} is now an admin"}
+
+# ============ WALLET EXPORT ============
+
+@api_router.get("/wallet/export")
+async def export_wallet(user: dict = Depends(get_current_user)):
+    """Export wallet transactions as CSV"""
+    import csv
+    import io
+    from starlette.responses import StreamingResponse
+    
+    payments = await db.payment_transactions.find(
+        {"user_id": user["user_id"]},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(1000)
+    
+    payouts = await db.payouts.find(
+        {"user_id": user["user_id"]},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(1000)
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Date", "Type", "Tontine", "Montant", "Frais", "Statut"])
+    
+    for p in payments:
+        writer.writerow([
+            p.get("created_at", ""),
+            "Contribution",
+            p.get("tontine_id", ""),
+            f"{p.get('base_amount', p.get('amount', 0)):.2f}",
+            f"{p.get('guarantee_fee', 0):.2f}",
+            p.get("payment_status", "")
+        ])
+    
+    for p in payouts:
+        writer.writerow([
+            p.get("created_at", ""),
+            "Versement recu",
+            p.get("tontine_id", ""),
+            f"{p.get('amount', 0):.2f}",
+            "0.00",
+            p.get("status", "")
+        ])
+    
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=savyn_releve_{user['user_id']}.csv"}
+    )
+
+# ============ CONTRACTS ============
+
+@api_router.get("/contracts")
+async def get_user_contracts(user: dict = Depends(get_current_user)):
+    """Get user's digital contracts"""
+    contracts = await db.contracts.find(
+        {"user_id": user["user_id"]},
+        {"_id": 0}
+    ).sort("accepted_at", -1).to_list(50)
+    return contracts
+
+# ============ FRAUD DETECTION ============
+
+@api_router.get("/admin/fraud-alerts")
+async def get_fraud_alerts(user: dict = Depends(get_current_user)):
+    """Get fraud detection alerts"""
+    await verify_admin(user)
+    
+    alerts = []
+    
+    # Detect multiple failed login attempts (>5 from same IP in 1 hour)
+    one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    pipeline = [
+        {"$match": {"success": False, "timestamp": {"$gte": one_hour_ago}}},
+        {"$group": {"_id": "$ip", "count": {"$sum": 1}, "emails": {"$addToSet": "$email"}}},
+        {"$match": {"count": {"$gte": 5}}}
+    ]
+    brute_force = await db.login_attempts.aggregate(pipeline).to_list(50)
+    for bf in brute_force:
+        alerts.append({
+            "type": "brute_force",
+            "severity": "high",
+            "message": f"IP {bf['_id']}: {bf['count']} tentatives echouees en 1h",
+            "details": {"ip": bf["_id"], "count": bf["count"], "emails": bf["emails"]}
+        })
+    
+    # Detect accounts with same IP creating multiple accounts
+    pipeline = [
+        {"$match": {"success": True}},
+        {"$group": {"_id": "$ip", "users": {"$addToSet": "$user_id"}}},
+        {"$match": {"$expr": {"$gte": [{"$size": "$users"}, 3]}}}
+    ]
+    multi_accounts = await db.login_attempts.aggregate(pipeline).to_list(50)
+    for ma in multi_accounts:
+        alerts.append({
+            "type": "multi_account",
+            "severity": "medium",
+            "message": f"IP {ma['_id']}: {len(ma['users'])} comptes differents",
+            "details": {"ip": ma["_id"], "user_count": len(ma["users"]), "user_ids": ma["users"][:5]}
+        })
+    
+    # Detect suspended users
+    suspended = await db.users.count_documents({"is_suspended": True})
+    if suspended > 0:
+        alerts.append({
+            "type": "suspended_accounts",
+            "severity": "info",
+            "message": f"{suspended} compte(s) suspendu(s)",
+            "details": {"count": suspended}
+        })
+    
+    return {"alerts": alerts, "total": len(alerts)}
+
+# ============ ADMIN EXTENDED ============
+
+@api_router.post("/admin/suspend/{user_id}")
+async def suspend_user(user_id: str, request: Request, user: dict = Depends(get_current_user)):
+    """Suspend or unsuspend a user account"""
+    await verify_admin(user)
+    body = await request.json()
+    suspend = body.get("suspend", True)
+    reason = body.get("reason", "")
+    
+    now = datetime.now(timezone.utc).isoformat()
+    target = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    await db.users.update_one(
+        {"user_id": user_id},
+        {"$set": {
+            "is_suspended": suspend,
+            "suspension_reason": reason if suspend else None,
+            "suspended_at": now if suspend else None,
+            "updated_at": now
+        }}
+    )
+    
+    # Log admin action
+    await db.admin_actions.insert_one({
+        "action": "suspend" if suspend else "unsuspend",
+        "target_user_id": user_id,
+        "admin_user_id": user["user_id"],
+        "reason": reason,
+        "timestamp": now
+    })
+    
+    return {"message": f"User {'suspended' if suspend else 'unsuspended'}", "user_id": user_id}
+
+@api_router.put("/admin/kyc/{user_id}")
+async def admin_update_kyc(user_id: str, request: Request, user: dict = Depends(get_current_user)):
+    """Manually approve or reject KYC"""
+    await verify_admin(user)
+    body = await request.json()
+    status = body.get("status", "verified")  # verified, rejected
+    reason = body.get("reason", "")
+    
+    if status not in ["verified", "rejected", "pending"]:
+        raise HTTPException(status_code=400, detail="Invalid KYC status")
+    
+    now = datetime.now(timezone.utc).isoformat()
+    await db.users.update_one(
+        {"user_id": user_id},
+        {"$set": {"kyc_status": status, "updated_at": now}}
+    )
+    
+    # Update trust score based on KYC
+    if status == "verified":
+        await db.users.update_one(
+            {"user_id": user_id},
+            {"$inc": {"trust_score": 10}}
+        )
+    
+    await db.admin_actions.insert_one({
+        "action": "kyc_update",
+        "target_user_id": user_id,
+        "admin_user_id": user["user_id"],
+        "new_status": status,
+        "reason": reason,
+        "timestamp": now
+    })
+    
+    return {"message": f"KYC status updated to {status}", "user_id": user_id}
+
+@api_router.get("/admin/analytics")
+async def admin_analytics(user: dict = Depends(get_current_user)):
+    """Financial analytics for admin dashboard"""
+    await verify_admin(user)
+    
+    # Monthly payment volume
+    pipeline = [
+        {"$match": {"payment_status": "paid"}},
+        {"$group": {
+            "_id": {"$substr": ["$created_at", 0, 7]},
+            "volume": {"$sum": "$amount"},
+            "count": {"$sum": 1}
+        }},
+        {"$sort": {"_id": -1}},
+        {"$limit": 12}
+    ]
+    monthly_volume = await db.payment_transactions.aggregate(pipeline).to_list(12)
+    
+    # User growth
+    pipeline = [
+        {"$group": {
+            "_id": {"$substr": ["$created_at", 0, 7]},
+            "new_users": {"$sum": 1}
+        }},
+        {"$sort": {"_id": -1}},
+        {"$limit": 12}
+    ]
+    user_growth = await db.users.aggregate(pipeline).to_list(12)
+    
+    # Tontine status distribution
+    pipeline = [
+        {"$group": {"_id": "$status", "count": {"$sum": 1}}}
+    ]
+    tontine_distribution = await db.tontines.aggregate(pipeline).to_list(10)
+    
+    # KYC status distribution
+    pipeline = [
+        {"$group": {"_id": "$kyc_status", "count": {"$sum": 1}}}
+    ]
+    kyc_distribution = await db.users.aggregate(pipeline).to_list(10)
+    
+    return {
+        "monthly_volume": monthly_volume,
+        "user_growth": user_growth,
+        "tontine_distribution": {d["_id"]: d["count"] for d in tontine_distribution},
+        "kyc_distribution": {d["_id"]: d["count"] for d in kyc_distribution}
+    }
+
+# ============ PAYOUT / FUND RECEPTION ============
+
+@api_router.post("/admin/trigger-payout/{tontine_id}")
+async def trigger_payout(tontine_id: str, user: dict = Depends(get_current_user)):
+    """Admin trigger payout for current cycle recipient"""
+    await verify_admin(user)
+    
+    tontine = await db.tontines.find_one({"tontine_id": tontine_id}, {"_id": 0})
+    if not tontine:
+        raise HTTPException(status_code=404, detail="Tontine not found")
+    
+    if tontine["status"] != "active":
+        raise HTTPException(status_code=400, detail="Tontine is not active")
+    
+    current_cycle = tontine.get("current_cycle", 1)
+    participants = tontine.get("participants", [])
+    
+    # Find recipient for current cycle
+    recipient = next((p for p in participants if p["position"] == current_cycle), None)
+    if not recipient:
+        raise HTTPException(status_code=400, detail="No recipient for current cycle")
+    
+    if recipient.get("received_payout"):
+        raise HTTPException(status_code=400, detail="Recipient already received payout for this cycle")
+    
+    now = datetime.now(timezone.utc).isoformat()
+    payout_amount = tontine["monthly_amount"] * tontine["max_participants"]
+    
+    # Create payout record
+    payout_doc = {
+        "payout_id": f"payout_{uuid.uuid4().hex[:12]}",
+        "tontine_id": tontine_id,
+        "user_id": recipient["user_id"],
+        "cycle": current_cycle,
+        "amount": payout_amount,
+        "status": "completed",  # Simulated - would be pending with real Lemon Way
+        "method": "lemonway_simulated",
+        "created_at": now
+    }
+    await db.payouts.insert_one(payout_doc)
+    
+    # Mark recipient as received
+    await db.tontines.update_one(
+        {"tontine_id": tontine_id, "participants.user_id": recipient["user_id"]},
+        {"$set": {"participants.$.received_payout": True}}
+    )
+    
+    # Advance cycle
+    next_cycle = current_cycle + 1
+    new_status = "completed" if next_cycle > len(participants) else "active"
+    await db.tontines.update_one(
+        {"tontine_id": tontine_id},
+        {"$set": {"current_cycle": next_cycle, "status": new_status, "updated_at": now}}
+    )
+    
+    return {
+        "message": f"Payout of {payout_amount}EUR triggered for cycle {current_cycle}",
+        "recipient_user_id": recipient["user_id"],
+        "payout_id": payout_doc["payout_id"],
+        "next_cycle": next_cycle,
+        "tontine_status": new_status
+    }
+
+# ============ LEMON WAY MOCK ============
+
+@api_router.get("/lemonway/status")
+async def lemonway_status():
+    """Lemon Way integration status (sandbox mock)"""
+    return {
+        "provider": "Lemon Way",
+        "mode": "sandbox_simulated",
+        "status": "active",
+        "capabilities": [
+            "KYC verification",
+            "SEPA Direct Debit mandate",
+            "Escrow wallet management",
+            "Automated fund transfers",
+            "Payout processing"
+        ],
+        "note": "Integration simulee - En attente des cles API Lemon Way pour activer le mode sandbox reel"
+    }
+
+@api_router.get("/lemonway/wallet/{user_id_param}")
+async def lemonway_wallet(user_id_param: str, user: dict = Depends(get_current_user)):
+    """Get simulated Lemon Way wallet for a user"""
+    # Only allow users to see their own wallet, or admins
+    if user["user_id"] != user_id_param:
+        await verify_admin(user)
+    
+    payments = await db.payment_transactions.find(
+        {"user_id": user_id_param, "payment_status": "paid"},
+        {"_id": 0}
+    ).to_list(500)
+    
+    payouts = await db.payouts.find(
+        {"user_id": user_id_param, "status": "completed"},
+        {"_id": 0}
+    ).to_list(100)
+    
+    total_in = sum(p.get("amount", 0) for p in payments)
+    total_out = sum(p.get("amount", 0) for p in payouts)
+    
+    return {
+        "provider": "Lemon Way (simulated)",
+        "wallet_id": f"LW_{user_id_param}",
+        "balance": total_out - total_in,
+        "total_deposits": total_in,
+        "total_withdrawals": total_out,
+        "sepa_mandate_active": True,
+        "escrow_status": "funds_held_by_provider"
+    }
 
 # ============ ROOT ============
 

@@ -7,7 +7,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { toast } from 'sonner';
-import { Mail, Lock, User, Phone, Loader2 } from 'lucide-react';
+import { Mail, Lock, User, Phone, Loader2, CheckSquare } from 'lucide-react';
 
 export default function LoginPage() {
   const { t } = useLanguage();
@@ -144,7 +144,8 @@ export function RegisterPage() {
     name: '',
     email: '',
     phone: '',
-    password: ''
+    password: '',
+    accept_terms: false
   });
 
   const handleSubmit = async (e) => {
@@ -246,9 +247,23 @@ export function RegisterPage() {
               </div>
             </div>
 
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="accept_terms"
+                checked={formData.accept_terms}
+                onChange={(e) => setFormData({ ...formData, accept_terms: e.target.checked })}
+                className="mt-1 w-4 h-4 rounded border-gray-300 text-[#2E5C55] focus:ring-[#2E5C55]"
+                data-testid="register-terms-checkbox"
+              />
+              <label htmlFor="accept_terms" className="text-sm text-gray-600">
+                J'accepte les <a href="#" className="text-[#2E5C55] font-medium hover:underline">conditions d'utilisation</a> et la <a href="#" className="text-[#2E5C55] font-medium hover:underline">politique de confidentialité</a> de Savyn.
+              </label>
+            </div>
+
             <Button
               type="submit"
-              disabled={loading}
+              disabled={loading || !formData.accept_terms}
               className="w-full h-12 bg-[#2E5C55] hover:bg-[#254a44] text-white rounded-lg font-semibold btn-press"
               data-testid="register-submit-btn"
             >
