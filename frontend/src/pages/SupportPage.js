@@ -275,7 +275,7 @@ export default function SupportPage() {
                   Notre équipe est disponible du lundi au vendredi, de 9h à 18h.
                 </p>
                 <div className="space-y-2 text-white/90">
-                  <p>Email: support@tontine.com</p>
+                  <p>Email: support@savyn.com</p>
                   <p>Téléphone: +33 1 23 45 67 89</p>
                 </div>
               </CardContent>
