@@ -26,7 +26,7 @@ import {
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
-const TontineMarketCard = ({ tontine, onJoin, t }) => {
+const TontineMarketCard = ({ tontine, onJoin, t, isJoined }) => {
   const spotsLeft = tontine.spots_left || (tontine.max_participants - (tontine.participant_count || 0));
   const progress = ((tontine.participant_count || 0) / tontine.max_participants) * 100;
 
@@ -96,16 +96,16 @@ const TontineMarketCard = ({ tontine, onJoin, t }) => {
       <div className="px-6 py-4 bg-[#F9FAFB] border-t border-gray-100">
         <div className="flex items-center justify-between">
           <span className="text-sm text-gray-500">
-            {spotsLeft > 0 ? `${spotsLeft} ${t('tontine.spots_left')}` : t('tontine.full')}
+            {isJoined ? 'Deja inscrit' : spotsLeft > 0 ? `${spotsLeft} ${t('tontine.spots_left')}` : t('tontine.full')}
           </span>
           <Button
             onClick={() => onJoin(tontine.tontine_id)}
-            disabled={spotsLeft <= 0}
-            className="bg-[#2E5C55] hover:bg-[#254a44] text-white rounded-full px-6"
+            disabled={spotsLeft <= 0 || isJoined}
+            className={isJoined ? "bg-gray-400 text-white rounded-full px-6 cursor-not-allowed" : "bg-[#2E5C55] hover:bg-[#254a44] text-white rounded-full px-6"}
             data-testid={`join-btn-${tontine.tontine_id}`}
           >
-            {t('tontine.join_btn')}
-            <ArrowRight className="ml-2 w-4 h-4" />
+            {isJoined ? 'Inscrit' : t('tontine.join_btn')}
+            {!isJoined && <ArrowRight className="ml-2 w-4 h-4" />}
           </Button>
         </div>
       </div>
@@ -125,10 +125,12 @@ export default function MarketplacePage() {
   const [contractDialog, setContractDialog] = useState({ open: false, tontine: null });
   const [contractAccepted, setContractAccepted] = useState(false);
   const [joining, setJoining] = useState(false);
+  const [userTontineIds, setUserTontineIds] = useState([]);
 
   useEffect(() => {
     fetchTontines();
-  }, []);
+    if (user) fetchUserTontines();
+  }, [user]);
 
   const fetchTontines = async () => {
     try {
@@ -138,6 +140,15 @@ export default function MarketplacePage() {
       console.error('Error fetching tontines:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchUserTontines = async () => {
+    try {
+      const response = await axios.get(`${API}/tontines/user/active`, { withCredentials: true });
+      setUserTontineIds(response.data.map(t => t.tontine_id));
+    } catch (error) {
+      console.error('Error fetching user tontines:', error);
     }
   };
 
@@ -313,6 +324,7 @@ export default function MarketplacePage() {
                   tontine={tontine} 
                   onJoin={handleJoin}
                   t={t}
+                  isJoined={userTontineIds.includes(tontine.tontine_id)}
                 />
               </motion.div>
             ))}

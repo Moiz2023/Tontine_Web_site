@@ -216,6 +216,7 @@ async def register(user_data: UserCreate, response: Response):
         max_age=JWT_EXPIRY_DAYS * 24 * 60 * 60
     )
     
+    is_admin = user_data.email in ADMIN_EMAILS
     return {
         "user_id": user_id,
         "email": user_data.email,
@@ -223,6 +224,7 @@ async def register(user_data: UserCreate, response: Response):
         "phone": sanitized_phone,
         "kyc_status": "pending",
         "trust_score": 50,
+        "is_admin": is_admin,
         "token": token
     }
 
@@ -271,6 +273,7 @@ async def login(credentials: UserLogin, request: Request, response: Response):
         max_age=JWT_EXPIRY_DAYS * 24 * 60 * 60
     )
     
+    is_admin = user.get("is_admin", False) or user.get("email") in ADMIN_EMAILS
     return {
         "user_id": user["user_id"],
         "email": user["email"],
@@ -279,6 +282,7 @@ async def login(credentials: UserLogin, request: Request, response: Response):
         "picture": user.get("picture"),
         "kyc_status": user.get("kyc_status", "pending"),
         "trust_score": user.get("trust_score", 50),
+        "is_admin": is_admin,
         "token": token
     }
 
@@ -361,6 +365,7 @@ async def exchange_session(request: Request, response: Response):
 
 @api_router.get("/auth/me")
 async def get_me(user: dict = Depends(get_current_user)):
+    is_admin = user.get("is_admin", False) or user.get("email") in ADMIN_EMAILS
     return {
         "user_id": user["user_id"],
         "email": user["email"],
@@ -370,6 +375,7 @@ async def get_me(user: dict = Depends(get_current_user)):
         "kyc_status": user.get("kyc_status", "pending"),
         "trust_score": user.get("trust_score", 50),
         "language": user.get("language", "fr"),
+        "is_admin": is_admin,
         "created_at": user.get("created_at")
     }
 

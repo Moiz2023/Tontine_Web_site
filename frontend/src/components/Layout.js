@@ -96,14 +96,17 @@ export const Navbar = () => {
 
             {isAuthenticated ? (
               <>
-                {/* Admin Link */}
-                <Link
-                  to="/admin"
-                  className="hidden lg:flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-                >
-                  <Shield className="w-4 h-4" />
-                  Admin
-                </Link>
+                {/* Admin Link - only visible for admins */}
+                {user?.is_admin && (
+                  <Link
+                    to="/admin"
+                    className="hidden lg:flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                    data-testid="admin-nav-link"
+                  >
+                    <Shield className="w-4 h-4" />
+                    Admin
+                  </Link>
+                )}
 
                 {/* User Menu */}
                 <DropdownMenu>
@@ -193,11 +196,12 @@ export const Navbar = () => {
                   {link.label}
                 </Link>
               ))}
-              {isAuthenticated && (
+              {isAuthenticated && user?.is_admin && (
                 <Link
                   to="/admin"
                   onClick={() => setMobileMenuOpen(false)}
                   className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100"
+                  data-testid="admin-nav-link-mobile"
                 >
                   <Shield className="w-5 h-5" />
                   Admin
