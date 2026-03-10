@@ -9,7 +9,7 @@ import {
   RefreshControl,
   ActivityIndicator,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Feather';
+import { Feather as Icon } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { tontineAPI, walletAPI, trustScoreAPI } from '../../services/api';

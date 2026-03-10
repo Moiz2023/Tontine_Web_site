@@ -2,7 +2,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import Icon from 'react-native-vector-icons/Feather';
+import { Feather as Icon } from '@expo/vector-icons';
 
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';

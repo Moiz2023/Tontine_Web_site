@@ -9,7 +9,7 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Feather';
+import { Feather as Icon } from '@expo/vector-icons';
 import { useLanguage } from '../../context/LanguageContext';
 import { tontineAPI } from '../../services/api';
 import { COLORS, SPACING, BORDER_RADIUS } from '../../config';

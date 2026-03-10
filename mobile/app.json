@@ -1,4 +1,28 @@
 {
-  "name": "Savyn",
-  "displayName": "Savyn"
+  "expo": {
+    "name": "Savyn",
+    "slug": "savyn",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": false,
+    "splash": {
+      "backgroundColor": "#2E5C55",
+      "resizeMode": "contain"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.savyn.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#2E5C55"
+      },
+      "package": "com.savyn.app"
+    },
+    "plugins": [
+      "expo-router"
+    ]
+  }
 }
