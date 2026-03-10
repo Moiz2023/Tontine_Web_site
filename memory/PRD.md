@@ -5,39 +5,38 @@ Plateforme digitale pour la gestion de tontines (epargne collective). Applicatio
 
 ## Brand Name: **Savyn**
 
+## Business Model
+- **Frais de service plateforme: 2%** preleves sur chaque versement (payout) recu par un membre
+- **Fonds de garantie: 3%** sur chaque contribution mensuelle (couvre les defauts de paiement)
+- Revenus plateforme suivis dans la collection `platform_revenue` et visibles dans l'admin
+
 ## Architecture
 ```
 /
 ├── backend/         # FastAPI (Python) + MongoDB
 ├── frontend/        # React web app
-└── mobile/          # React Native (Expo) - code separe pour push independant
-    ├── App.js       # Point d'entree Expo
-    ├── app.json     # Config Expo (nom, icone, splash)
-    ├── assets/      # Icone app
-    └── src/
-        ├── config/      # API URL, colors, spacing
-        ├── context/     # AuthContext, LanguageContext
-        ├── navigation/  # Tab + Stack navigation
-        ├── screens/     # auth/ (Login, Register, KYC) + main/ (8 ecrans)
-        ├── services/    # API service (axios)
-        └── components/  # UI reutilisable
+└── mobile/          # React Native (Expo) - code separe
 ```
 
 ## What's Implemented
-
-### Web App (complete, tested)
+### Web App
 - Auth (JWT + Google OAuth), KYC (simule), Tontines CRUD, Marketplace, Wallet (CSV export)
-- Admin (users, tontines, tickets, fraud, analytics, KYC validation, suspension, payouts)
-- Contrat digital, Trust Score, Support (FAQ + tickets)
-- 47/47 tests (fonctionnels + securite + penetration + charge)
+- Admin (users, tontines, tickets, fraud, analytics, KYC validation, suspension, payouts, revenus plateforme)
+- Contrat digital (mentions 3% garantie + 2% frais service), Trust Score, Support
+- Menu admin visible uniquement pour admins
+- Bouton "Rejoindre" desactive pour tontines deja rejointes
+- **2% frais de service sur payouts** avec suivi des revenus
 
-### Mobile App (Expo, complete code)
-- 10 ecrans: Login, Register (terms), KYC, Dashboard, Marketplace (contrat), Create Tontine, Detail, Wallet, Profile, Support
-- Navigation tabs + stack, FR/EN, pull-to-refresh
-- Compatible Expo Go pour test sur telephone
+### Mobile App (Expo)
+- 10 ecrans complets, navigation tabs+stack, FR/EN, compatible Expo Go
 
 ### Simule/Mock
 - KYC (auto-approve), SEPA (Stripe test), Lemon Way (sandbox mock)
+
+## Testing Status
+- 47+ tests backend passes (fonctionnels, securite, penetration, charge)
+- 8 tests frais plateforme passes
+- 100% success rate sur tous les tests
 
 ## Admin Access
 ADMIN_EMAILS env var: admin@savyn.com, slimimoez@gmail.com
