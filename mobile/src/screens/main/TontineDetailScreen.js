@@ -74,8 +74,8 @@ const TontineDetailScreen = ({ route, navigation }) => {
           { text: 'Annuler', style: 'cancel', onPress: () => setPaymentLoading(false) },
           { text: 'Confirmer', onPress: async () => {
             try {
-              const response = await paymentAPI.createCheckout(id, 'trustfundy://');
-              Alert.alert('Info', 'Redirection vers la page de paiement Stripe...');
+              const response = await paymentAPI.createCheckout(id, 'savyn://');
+              Alert.alert('Info', 'Redirection vers la page de paiement...');
               // In a real app, open response.data.url in WebView
             } catch (error) {
               Alert.alert('Erreur', error.response?.data?.detail || 'Erreur de paiement');

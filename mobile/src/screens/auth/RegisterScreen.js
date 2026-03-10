@@ -25,12 +25,17 @@ const RegisterScreen = ({ navigation }) => {
     email: '',
     phone: '',
     password: '',
+    accept_terms: false,
   });
   const [showPassword, setShowPassword] = useState(false);
 
   const handleRegister = async () => {
     if (!formData.name || !formData.email || !formData.password) {
       Alert.alert('Erreur', 'Veuillez remplir tous les champs obligatoires');
+      return;
+    }
+    if (!formData.accept_terms) {
+      Alert.alert('Erreur', "Vous devez accepter les conditions d'utilisation");
       return;
     }
 
@@ -57,9 +62,9 @@ const RegisterScreen = ({ navigation }) => {
           {/* Logo */}
           <View style={styles.logoContainer}>
             <View style={styles.logo}>
-              <Text style={styles.logoText}>TF</Text>
+              <Text style={styles.logoText}>S</Text>
             </View>
-            <Text style={styles.appName}>TrustFundy</Text>
+            <Text style={styles.appName}>Savyn</Text>
           </View>
 
           {/* Title */}
@@ -121,10 +126,24 @@ const RegisterScreen = ({ navigation }) => {
               </TouchableOpacity>
             </View>
 
+            {/* Terms */}
+            <TouchableOpacity
+              style={styles.termsRow}
+              onPress={() => setFormData({ ...formData, accept_terms: !formData.accept_terms })}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.checkbox, formData.accept_terms && styles.checkboxActive]}>
+                {formData.accept_terms && <Icon name="check" size={14} color={COLORS.white} />}
+              </View>
+              <Text style={styles.termsText}>
+                J'accepte les conditions d'utilisation et la politique de confidentialite de Savyn.
+              </Text>
+            </TouchableOpacity>
+
             <TouchableOpacity 
-              style={[styles.button, loading && styles.buttonDisabled]}
+              style={[styles.button, (loading || !formData.accept_terms) && styles.buttonDisabled]}
               onPress={handleRegister}
-              disabled={loading}
+              disabled={loading || !formData.accept_terms}
             >
               {loading ? (
                 <Text style={styles.buttonText}>...</Text>
@@ -293,6 +312,32 @@ const styles = StyleSheet.create({
   footerLink: {
     color: COLORS.primary,
     fontWeight: '600',
+  },
+  termsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: SPACING.md,
+    gap: 12,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: COLORS.gray[300],
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  checkboxActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  termsText: {
+    flex: 1,
+    fontSize: 13,
+    color: COLORS.gray[600],
+    lineHeight: 18,
   },
 });
 

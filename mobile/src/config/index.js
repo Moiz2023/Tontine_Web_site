@@ -1,4 +1,4 @@
-// TrustFundy Mobile App - Configuration
+// Savyn Mobile App - Configuration
 export const API_BASE_URL = 'https://trustfundy-staging.preview.emergentagent.com/api';
 
 export const COLORS = {

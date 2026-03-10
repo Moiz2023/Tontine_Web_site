@@ -53,9 +53,9 @@ const LoginScreen = ({ navigation }) => {
           {/* Logo */}
           <View style={styles.logoContainer}>
             <View style={styles.logo}>
-              <Text style={styles.logoText}>TF</Text>
+              <Text style={styles.logoText}>S</Text>
             </View>
-            <Text style={styles.appName}>TrustFundy</Text>
+            <Text style={styles.appName}>Savyn</Text>
           </View>
 
           {/* Title */}

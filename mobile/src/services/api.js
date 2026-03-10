@@ -56,7 +56,7 @@ export const tontineAPI = {
   getUserTontines: () => api.get('/tontines/user/active'),
   getTontine: (id) => api.get(`/tontines/${id}`),
   create: (data) => api.post('/tontines', data),
-  join: (tontineId) => api.post('/tontines/join', { tontine_id: tontineId }),
+  join: (tontineId, acceptContract = true) => api.post('/tontines/join', { tontine_id: tontineId, accept_contract: acceptContract }),
 };
 
 // Payment API
@@ -70,6 +70,7 @@ export const paymentAPI = {
 // Wallet API
 export const walletAPI = {
   get: () => api.get('/wallet'),
+  exportCSV: () => api.get('/wallet/export', { responseType: 'blob' }),
 };
 
 // Trust Score API
@@ -86,6 +87,17 @@ export const supportAPI = {
 // User API
 export const userAPI = {
   updateSettings: (data) => api.put('/users/settings', data),
+};
+
+// Contracts API
+export const contractsAPI = {
+  getAll: () => api.get('/contracts'),
+};
+
+// Lemon Way API
+export const lemonwayAPI = {
+  getStatus: () => api.get('/lemonway/status'),
+  getWallet: (userId) => api.get(`/lemonway/wallet/${userId}`),
 };
 
 export default api;

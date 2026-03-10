@@ -15,7 +15,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import { tontineAPI } from '../../services/api';
 import { COLORS, SPACING, BORDER_RADIUS } from '../../config';
 
-const TontineCard = ({ tontine, onJoin, t }) => {
+const TontineCard = ({ tontine, onJoin, t, isJoined }) => {
   const spotsLeft = tontine.spots_left || (tontine.max_participants - (tontine.participant_count || 0));
   const progress = ((tontine.participant_count || 0) / tontine.max_participants) * 100;
 
@@ -71,15 +71,15 @@ const TontineCard = ({ tontine, onJoin, t }) => {
 
       <View style={styles.cardFooter}>
         <Text style={styles.spotsText}>
-          {spotsLeft > 0 ? `${spotsLeft} places restantes` : 'Complet'}
+          {isJoined ? 'Deja inscrit' : spotsLeft > 0 ? `${spotsLeft} places restantes` : 'Complet'}
         </Text>
         <TouchableOpacity
-          style={[styles.joinButton, spotsLeft <= 0 && styles.joinButtonDisabled]}
+          style={[styles.joinButton, (spotsLeft <= 0 || isJoined) && styles.joinButtonDisabled]}
           onPress={() => onJoin(tontine.tontine_id)}
-          disabled={spotsLeft <= 0}
+          disabled={spotsLeft <= 0 || isJoined}
         >
-          <Text style={styles.joinButtonText}>{t('tontine.join_btn')}</Text>
-          <Icon name="arrow-right" size={16} color={COLORS.white} />
+          <Text style={styles.joinButtonText}>{isJoined ? 'Inscrit' : t('tontine.join_btn')}</Text>
+          {!isJoined && <Icon name="arrow-right" size={16} color={COLORS.white} />}
         </TouchableOpacity>
       </View>
     </View>
@@ -92,9 +92,11 @@ const MarketplaceScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [userTontineIds, setUserTontineIds] = useState([]);
 
   useEffect(() => {
     fetchTontines();
+    fetchUserTontines();
   }, []);
 
   const fetchTontines = async () => {
@@ -109,14 +111,31 @@ const MarketplaceScreen = ({ navigation }) => {
     }
   };
 
-  const handleJoin = async (tontineId) => {
+  const fetchUserTontines = async () => {
     try {
-      await tontineAPI.join(tontineId);
-      Alert.alert('Succès', 'Vous avez rejoint la tontine !');
-      navigation.navigate('TontineDetail', { id: tontineId });
-    } catch (error) {
-      Alert.alert('Erreur', error.response?.data?.detail || 'Une erreur est survenue');
-    }
+      const response = await tontineAPI.getUserTontines();
+      setUserTontineIds(response.data.map(t => t.tontine_id));
+    } catch (error) {}
+  };
+
+  const handleJoin = async (tontineId) => {
+    const tontine = tontines.find(t => t.tontine_id === tontineId);
+    Alert.alert(
+      'Contrat Digital',
+      `En rejoignant "${tontine?.name}", vous vous engagez a:\n\n- Effectuer tous les paiements mensuels (${tontine?.monthly_amount}EUR)\n- Autoriser le prelevement SEPA automatique\n- Accepter la procedure de recouvrement en cas de defaut\n- Contribuer au fonds de garantie (3%)\n\nLes fonds sont detenus par Lemon Way.`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Signer et Rejoindre', onPress: async () => {
+          try {
+            await tontineAPI.join(tontineId, true);
+            Alert.alert('Succes', 'Vous avez rejoint la tontine !');
+            navigation.navigate('TontineDetail', { id: tontineId });
+          } catch (error) {
+            Alert.alert('Erreur', error.response?.data?.detail || 'Une erreur est survenue');
+          }
+        }},
+      ]
+    );
   };
 
   const filteredTontines = tontines.filter(t =>
@@ -149,7 +168,7 @@ const MarketplaceScreen = ({ navigation }) => {
         data={filteredTontines}
         keyExtractor={(item) => item.tontine_id}
         renderItem={({ item }) => (
-          <TontineCard tontine={item} onJoin={handleJoin} t={t} />
+          <TontineCard tontine={item} onJoin={handleJoin} t={t} isJoined={userTontineIds.includes(item.tontine_id)} />
         )}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
