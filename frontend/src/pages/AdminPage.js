@@ -213,13 +213,13 @@ export default function AdminPage() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8"
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8"
         >
           <StatCard
             icon={Users}
             title={t('admin.total_users')}
             value={stats?.users?.total || 0}
-            subtitle={`${stats?.users?.verified || 0} vérifiés`}
+            subtitle={`${stats?.users?.verified || 0} verifies`}
             color="bg-[#2E5C55]"
           />
           <StatCard
@@ -232,9 +232,16 @@ export default function AdminPage() {
           <StatCard
             icon={CreditCard}
             title={t('admin.total_volume')}
-            value={`${stats?.payments?.volume?.toFixed(2) || '0.00'}€`}
+            value={`${stats?.payments?.volume?.toFixed(2) || '0.00'}EUR`}
             subtitle={`${stats?.payments?.total || 0} transactions`}
             color="bg-green-600"
+          />
+          <StatCard
+            icon={DollarSign}
+            title="Revenus Plateforme"
+            value={`${stats?.platform_revenue?.total?.toFixed(2) || '0.00'}EUR`}
+            subtitle={`2% sur ${stats?.platform_revenue?.payouts_count || 0} payouts`}
+            color="bg-purple-600"
           />
           <StatCard
             icon={MessageSquare}

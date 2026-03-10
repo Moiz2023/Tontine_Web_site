@@ -139,6 +139,8 @@ export default function TontineDetailPage() {
   const userParticipant = tontine.participants?.find(p => p.user_id === user?.user_id);
   const progress = (tontine.participants?.length || 0) / tontine.max_participants * 100;
   const totalPerTurn = tontine.monthly_amount * tontine.max_participants;
+  const platformFee = Math.round(totalPerTurn * 0.02 * 100) / 100;
+  const netPayout = totalPerTurn - platformFee;
 
   return (
     <div className="min-h-screen bg-[#F9FAFB] py-8 px-4" data-testid="tontine-detail-page">
@@ -197,7 +199,11 @@ export default function TontineDetailPage() {
 
             <div className="bg-[#F9FAFB] rounded-xl p-6 min-w-[280px]">
               <p className="text-sm text-gray-500 mb-2">Total par tour</p>
-              <p className="text-3xl font-bold text-[#2E5C55] mb-4">{totalPerTurn}€</p>
+              <p className="text-3xl font-bold text-[#2E5C55] mb-1">{totalPerTurn}EUR</p>
+              <div className="flex items-center gap-2 mb-4">
+                <p className="text-xs text-gray-400">Frais Savyn (2%): -{platformFee}EUR</p>
+                <p className="text-xs font-semibold text-green-600">Net: {netPayout}EUR</p>
+              </div>
               
               {!isParticipant && tontine.status === 'open' && (
                 <Button
@@ -318,9 +324,10 @@ export default function TontineDetailPage() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-[#2E5C55]">{totalPerTurn}€</p>
+                        <p className="font-bold text-[#2E5C55]">{netPayout}EUR</p>
+                        <p className="text-xs text-gray-400">-{platformFee}EUR frais</p>
                         <p className="text-sm text-gray-500">
-                          {isPast ? 'Versé' : 'À venir'}
+                          {isPast ? 'Verse' : 'A venir'}
                         </p>
                       </div>
                     </div>

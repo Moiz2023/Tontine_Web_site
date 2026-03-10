@@ -615,10 +615,13 @@ async def join_tontine(join_data: TontineContract, user: dict = Depends(get_curr
             "duration_months": tontine["duration_months"],
             "max_participants": tontine["max_participants"],
             "guarantee_fee_pct": 3,
+            "platform_fee_pct": 2,
             "obligations": [
                 "Effectuer tous les paiements mensuels à temps",
                 "Autoriser le prélèvement SEPA automatique",
-                "Accepter la procédure de recouvrement en cas de défaut"
+                "Accepter la procédure de recouvrement en cas de défaut",
+                "Contribuer au fonds de garantie (3% par contribution)",
+                "Accepter les frais de service Savyn (2% sur chaque versement reçu)"
             ]
         },
         "accepted_at": now,
@@ -863,11 +866,13 @@ async def get_wallet(user: dict = Depends(get_current_user)):
         {"_id": 0}
     ).to_list(100)
     total_received = sum(p.get("amount", 0) for p in payouts)
+    total_platform_fees = sum(p.get("platform_fee", 0) for p in payouts)
     
     return {
         "total_contributed": total_contributed,
         "total_fees_paid": total_fees,
         "total_received": total_received,
+        "total_platform_fees": total_platform_fees,
         "net_balance": total_received - total_contributed - total_fees,
         "recent_transactions": payments[:10],
         "recent_payouts": payouts[:10]
@@ -993,10 +998,19 @@ async def admin_stats(user: dict = Depends(get_current_user)):
     result = await db.payment_transactions.aggregate(pipeline).to_list(1)
     total_volume = result[0]["total"] if result else 0
     
+    # Calculate platform revenue
+    revenue_pipeline = [
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}, "count": {"$sum": 1}}}
+    ]
+    revenue_result = await db.platform_revenue.aggregate(revenue_pipeline).to_list(1)
+    platform_revenue = revenue_result[0]["total"] if revenue_result else 0
+    platform_payouts = revenue_result[0]["count"] if revenue_result else 0
+    
     return {
         "users": {"total": total_users, "verified": verified_users},
         "tontines": {"total": total_tontines, "active": active_tontines},
         "payments": {"total": total_payments, "volume": total_volume},
+        "platform_revenue": {"total": round(platform_revenue, 2), "fee_pct": 2, "payouts_count": platform_payouts},
         "open_tickets": await db.support_tickets.count_documents({"status": "open"})
     }
 
@@ -1084,7 +1098,7 @@ async def export_wallet(user: dict = Depends(get_current_user)):
             "Versement recu",
             p.get("tontine_id", ""),
             f"{p.get('amount', 0):.2f}",
-            "0.00",
+            f"{p.get('platform_fee', 0):.2f}",
             p.get("status", "")
         ])
     
@@ -1303,7 +1317,9 @@ async def trigger_payout(tontine_id: str, user: dict = Depends(get_current_user)
         raise HTTPException(status_code=400, detail="Recipient already received payout for this cycle")
     
     now = datetime.now(timezone.utc).isoformat()
-    payout_amount = tontine["monthly_amount"] * tontine["max_participants"]
+    gross_amount = tontine["monthly_amount"] * tontine["max_participants"]
+    platform_fee = round(gross_amount * 0.02, 2)  # 2% platform service fee
+    net_amount = round(gross_amount - platform_fee, 2)
     
     # Create payout record
     payout_doc = {
@@ -1311,12 +1327,25 @@ async def trigger_payout(tontine_id: str, user: dict = Depends(get_current_user)
         "tontine_id": tontine_id,
         "user_id": recipient["user_id"],
         "cycle": current_cycle,
-        "amount": payout_amount,
-        "status": "completed",  # Simulated - would be pending with real Lemon Way
+        "gross_amount": gross_amount,
+        "platform_fee": platform_fee,
+        "platform_fee_pct": 2,
+        "amount": net_amount,
+        "status": "completed",
         "method": "lemonway_simulated",
         "created_at": now
     }
     await db.payouts.insert_one(payout_doc)
+    
+    # Track platform revenue
+    await db.platform_revenue.insert_one({
+        "revenue_id": f"rev_{uuid.uuid4().hex[:12]}",
+        "source": "payout_fee",
+        "payout_id": payout_doc["payout_id"],
+        "tontine_id": tontine_id,
+        "amount": platform_fee,
+        "created_at": now
+    })
     
     # Mark recipient as received
     await db.tontines.update_one(
@@ -1333,7 +1362,10 @@ async def trigger_payout(tontine_id: str, user: dict = Depends(get_current_user)
     )
     
     return {
-        "message": f"Payout of {payout_amount}EUR triggered for cycle {current_cycle}",
+        "message": f"Payout de {net_amount}EUR declenche (cycle {current_cycle})",
+        "gross_amount": gross_amount,
+        "platform_fee": platform_fee,
+        "net_amount": net_amount,
         "recipient_user_id": recipient["user_id"],
         "payout_id": payout_doc["payout_id"],
         "next_cycle": next_cycle,

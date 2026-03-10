@@ -354,6 +354,7 @@ export default function MarketplacePage() {
                     <li>Respecter les regles du groupe et le calendrier de distribution</li>
                     <li>Accepter la procedure de recouvrement legal en cas de defaut de paiement</li>
                     <li>Contribuer au fonds de garantie (3% de chaque contribution)</li>
+                    <li>Accepter les frais de service Savyn (2% preleves sur chaque versement recu)</li>
                   </ul>
                   <hr className="my-3" />
                   <p className="text-xs text-gray-500">
