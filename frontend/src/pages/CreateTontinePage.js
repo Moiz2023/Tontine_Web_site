@@ -25,7 +25,8 @@ import {
   ArrowLeft,
   ArrowRight,
   CheckCircle,
-  Loader2
+  Loader2,
+  Share2
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -58,6 +59,7 @@ export default function CreateTontinePage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [createdTontine, setCreatedTontine] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -82,8 +84,9 @@ export default function CreateTontinePage() {
         start_date: format(formData.start_date, 'yyyy-MM-dd')
       };
       const response = await axios.post(`${API}/tontines`, payload, { withCredentials: true });
-      toast.success('Tontine créée avec succès !');
-      navigate(`/tontines/${response.data.tontine_id}`);
+      toast.success('Tontine creee avec succes !');
+      setCreatedTontine(response.data);
+      setStep(4); // Show share step
     } catch (error) {
       toast.error(error.response?.data?.detail || t('common.error'));
     } finally {
@@ -444,6 +447,75 @@ export default function CreateTontinePage() {
                     )}
                   </Button>
                 </div>
+              </motion.div>
+            )}
+
+            {/* Step 4 - Share */}
+            {step === 4 && createdTontine && (
+              <motion.div
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 text-center"
+              >
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle className="w-8 h-8 text-green-600" />
+                </div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">Tontine creee !</h2>
+                <p className="text-gray-600 mb-6">Partagez le lien pour inviter des participants :</p>
+
+                <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-4 py-3 border mb-6">
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${window.location.origin}/tontines/${createdTontine.tontine_id}`}
+                    className="flex-1 text-sm text-gray-600 bg-transparent outline-none"
+                  />
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${window.location.origin}/tontines/${createdTontine.tontine_id}`);
+                      toast.success('Lien copie !');
+                    }}
+                    className="p-2 hover:bg-gray-200 rounded-md text-gray-500"
+                    data-testid="create-copy-link"
+                  >
+                    Copier
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3 mb-6">
+                  <Button
+                    onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(`Rejoignez ma tontine "${formData.name}" sur Savyn ! ${formData.monthly_amount}EUR/mois. ${window.location.origin}/tontines/${createdTontine.tontine_id}`)}`, '_blank')}
+                    className="bg-[#25D366] hover:bg-[#1fb855] text-white rounded-lg"
+                    data-testid="create-share-whatsapp"
+                  >
+                    <Share2 className="w-4 h-4 mr-2" />
+                    WhatsApp
+                  </Button>
+                  <Button
+                    onClick={() => window.open(`mailto:?subject=${encodeURIComponent(`Invitation - Tontine "${formData.name}" sur Savyn`)}&body=${encodeURIComponent(`Bonjour,\n\nJe vous invite a rejoindre ma tontine "${formData.name}" sur Savyn.\nMontant: ${formData.monthly_amount}EUR/mois\n\n${window.location.origin}/tontines/${createdTontine.tontine_id}`)}`)}
+                    className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
+                    data-testid="create-share-email"
+                  >
+                    <Share2 className="w-4 h-4 mr-2" />
+                    Email
+                  </Button>
+                  <Button
+                    onClick={() => window.open(`sms:?body=${encodeURIComponent(`Rejoignez ma tontine "${formData.name}" sur Savyn ! ${window.location.origin}/tontines/${createdTontine.tontine_id}`)}`)}
+                    className="bg-gray-600 hover:bg-gray-700 text-white rounded-lg"
+                    data-testid="create-share-sms"
+                  >
+                    <Share2 className="w-4 h-4 mr-2" />
+                    SMS
+                  </Button>
+                </div>
+
+                <Button
+                  onClick={() => navigate(`/tontines/${createdTontine.tontine_id}`)}
+                  className="bg-[#2E5C55] hover:bg-[#254a44] text-white rounded-full px-8"
+                  data-testid="create-go-to-tontine"
+                >
+                  Voir la tontine
+                </Button>
               </motion.div>
             )}
           </div>

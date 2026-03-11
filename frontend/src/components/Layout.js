@@ -56,9 +56,7 @@ export const Navbar = () => {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2">
-            <div className="w-10 h-10 rounded-xl bg-[#2E5C55] flex items-center justify-center">
-              <span className="text-white font-bold text-lg">S</span>
-            </div>
+            <img src="/logo.png" alt="Savyn" className="w-10 h-10 rounded-xl" />
             <span className="text-xl font-bold text-gray-900 hidden sm:block">Savyn</span>
           </Link>
 
@@ -234,9 +232,7 @@ export const Footer = () => {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           <div>
             <div className="flex items-center gap-2 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-[#2E5C55] flex items-center justify-center">
-                <span className="text-white font-bold text-lg">S</span>
-              </div>
+              <img src="/logo.png" alt="Savyn" className="w-10 h-10 rounded-xl" />
               <span className="text-xl font-bold text-gray-900">Savyn</span>
             </div>
             <p className="text-gray-600 text-sm">

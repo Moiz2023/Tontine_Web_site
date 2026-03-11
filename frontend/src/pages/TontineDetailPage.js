@@ -25,7 +25,12 @@ import {
   Clock,
   ArrowLeft,
   TrendingUp,
-  Loader2
+  Loader2,
+  Share2,
+  Mail,
+  MessageCircle,
+  Copy,
+  Phone
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -117,11 +122,49 @@ export default function TontineDetailPage() {
 
   const handleJoin = async () => {
     try {
-      await axios.post(`${API}/tontines/join`, { tontine_id: id }, { withCredentials: true });
+      await axios.post(`${API}/tontines/join`, { tontine_id: id, accept_contract: true }, { withCredentials: true });
       toast.success('Vous avez rejoint la tontine !');
       fetchTontine();
     } catch (error) {
       toast.error(error.response?.data?.detail || t('common.error'));
+    }
+  };
+
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareData, setShareData] = useState(null);
+
+  const handleShare = async () => {
+    try {
+      const res = await axios.get(`${API}/tontines/${id}/share`, { withCredentials: true });
+      setShareData(res.data);
+      setShareOpen(true);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erreur lors du partage');
+    }
+  };
+
+  const copyLink = () => {
+    if (shareData?.url) {
+      navigator.clipboard.writeText(shareData.url);
+      toast.success('Lien copie !');
+    }
+  };
+
+  const shareViaEmail = () => {
+    if (shareData) {
+      window.open(`mailto:?subject=${encodeURIComponent(shareData.email_subject)}&body=${encodeURIComponent(shareData.email_body)}`);
+    }
+  };
+
+  const shareViaWhatsApp = () => {
+    if (shareData) {
+      window.open(shareData.whatsapp_url, '_blank');
+    }
+  };
+
+  const shareViaSMS = () => {
+    if (shareData) {
+      window.open(`sms:?body=${encodeURIComponent(shareData.sms_body)}`);
     }
   };
 
@@ -197,7 +240,52 @@ export default function TontineDetailPage() {
               </div>
             </div>
 
-            <div className="bg-[#F9FAFB] rounded-xl p-6 min-w-[280px]">
+            <div className="flex flex-col gap-4">
+              {/* Share Button - only for creator */}
+              {tontine.creator_id === user?.user_id && tontine.status === 'open' && (
+                <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
+                  <p className="text-sm font-medium text-blue-800 mb-3 flex items-center gap-2">
+                    <Share2 className="w-4 h-4" />
+                    Inviter des participants
+                  </p>
+                  {!shareOpen ? (
+                    <Button
+                      onClick={handleShare}
+                      variant="outline"
+                      className="w-full border-blue-200 text-blue-700 hover:bg-blue-100 rounded-full"
+                      data-testid="share-tontine-btn"
+                    >
+                      <Share2 className="w-4 h-4 mr-2" />
+                      Partager le lien
+                    </Button>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border">
+                        <input type="text" readOnly value={shareData?.url || ''} className="flex-1 text-xs text-gray-600 bg-transparent outline-none" />
+                        <button onClick={copyLink} className="p-1.5 hover:bg-gray-100 rounded-md" data-testid="copy-link-btn">
+                          <Copy className="w-4 h-4 text-gray-500" />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <Button onClick={shareViaWhatsApp} size="sm" className="bg-[#25D366] hover:bg-[#1fb855] text-white rounded-lg text-xs" data-testid="share-whatsapp-btn">
+                          <MessageCircle className="w-4 h-4 mr-1" />
+                          WhatsApp
+                        </Button>
+                        <Button onClick={shareViaEmail} size="sm" className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs" data-testid="share-email-btn">
+                          <Mail className="w-4 h-4 mr-1" />
+                          Email
+                        </Button>
+                        <Button onClick={shareViaSMS} size="sm" className="bg-gray-600 hover:bg-gray-700 text-white rounded-lg text-xs" data-testid="share-sms-btn">
+                          <Phone className="w-4 h-4 mr-1" />
+                          SMS
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="bg-[#F9FAFB] rounded-xl p-6 min-w-[280px]">
               <p className="text-sm text-gray-500 mb-2">Total par tour</p>
               <p className="text-3xl font-bold text-[#2E5C55] mb-1">{totalPerTurn}EUR</p>
               <div className="flex items-center gap-2 mb-4">
@@ -239,6 +327,7 @@ export default function TontineDetailPage() {
                   </Button>
                 </div>
               )}
+            </div>
             </div>
           </div>
 

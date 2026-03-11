@@ -1059,6 +1059,33 @@ async def make_user_admin(user_id: str, user: dict = Depends(get_current_user)):
     )
     return {"message": f"User {user_id} is now an admin"}
 
+# ============ SHARE TONTINE LINK ============
+
+@api_router.get("/tontines/{tontine_id}/share")
+async def get_share_link(tontine_id: str, user: dict = Depends(get_current_user)):
+    """Generate shareable link for a tontine"""
+    tontine = await db.tontines.find_one({"tontine_id": tontine_id}, {"_id": 0})
+    if not tontine:
+        raise HTTPException(status_code=404, detail="Tontine not found")
+    
+    if tontine["creator_id"] != user["user_id"]:
+        raise HTTPException(status_code=403, detail="Only the creator can share this tontine")
+    
+    # Build share data
+    base_url = os.environ.get("FRONTEND_URL", "https://trustfundy-staging.preview.emergentagent.com")
+    share_url = f"{base_url}/tontines/{tontine_id}"
+    share_text = f"Rejoignez ma tontine \"{tontine['name']}\" sur Savyn ! {tontine['monthly_amount']}EUR/mois, {tontine['max_participants']} participants. "
+    
+    return {
+        "url": share_url,
+        "text": share_text,
+        "tontine_name": tontine["name"],
+        "whatsapp_url": f"https://wa.me/?text={share_text}{share_url}",
+        "email_subject": f"Invitation - Tontine \"{tontine['name']}\" sur Savyn",
+        "email_body": f"Bonjour,\n\nJe vous invite a rejoindre ma tontine \"{tontine['name']}\" sur Savyn.\n\nMontant mensuel: {tontine['monthly_amount']}EUR\nParticipants: {len(tontine.get('participants', []))}/{tontine['max_participants']}\n\nRejoingnez ici: {share_url}\n\nA bientot !",
+        "sms_body": f"{share_text}{share_url}"
+    }
+
 # ============ WALLET EXPORT ============
 
 @api_router.get("/wallet/export")
