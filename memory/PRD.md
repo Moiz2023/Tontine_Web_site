@@ -1,45 +1,32 @@
-# Savyn - PRD (Product Requirements Document)
+# Savyn - PRD
 
-## Original Problem Statement
-Plateforme digitale pour la gestion de tontines (epargne collective). Application web et mobile, backend securise, avec KYC, paiements SEPA, et gestion des groupes de tontine. Utilisation de Lemon Way pour la gestion des fonds.
-
-## Brand Name: **Savyn**
+## Brand: **Savyn**
+## Logo: Modern abstract S-shaped swirl in teal gradient (/logo.png)
 
 ## Business Model
-- **Frais de service plateforme: 2%** preleves sur chaque versement (payout) recu par un membre
-- **Fonds de garantie: 3%** sur chaque contribution mensuelle (couvre les defauts de paiement)
-- Revenus plateforme suivis dans la collection `platform_revenue` et visibles dans l'admin
+- 2% frais de service sur chaque payout
+- 3% fonds de garantie sur chaque contribution
 
-## Architecture
-```
-/
-├── backend/         # FastAPI (Python) + MongoDB
-├── frontend/        # React web app
-└── mobile/          # React Native (Expo) - code separe
-```
-
-## What's Implemented
-### Web App
-- Auth (JWT + Google OAuth), KYC (simule), Tontines CRUD, Marketplace, Wallet (CSV export)
-- Admin (users, tontines, tickets, fraud, analytics, KYC validation, suspension, payouts, revenus plateforme)
-- Contrat digital (mentions 3% garantie + 2% frais service), Trust Score, Support
-- Menu admin visible uniquement pour admins
-- Bouton "Rejoindre" desactive pour tontines deja rejointes
-- **2% frais de service sur payouts** avec suivi des revenus
+## Features Implemented
+### Web App (complete, tested)
+- Auth (JWT + Google OAuth), KYC (simule), Terms acceptance
+- Tontines CRUD, Marketplace, Contrat digital, Smart attribution
+- **Partage de lien tontine** via WhatsApp, Email, SMS (createur uniquement)
+- Wallet (CSV export), Trust Score, Support (FAQ + tickets)
+- Admin (users, tontines, tickets, fraud, analytics, KYC validation, suspension, payouts, revenus plateforme 2%)
+- Menu admin visible uniquement pour admins, Join desactive si deja inscrit
 
 ### Mobile App (Expo)
-- 10 ecrans complets, navigation tabs+stack, FR/EN, compatible Expo Go
+- 10 ecrans, compatible Expo Go, FR/EN
 
 ### Simule/Mock
 - KYC (auto-approve), SEPA (Stripe test), Lemon Way (sandbox mock)
 
-## Testing Status
-- 47+ tests backend passes (fonctionnels, securite, penetration, charge)
-- 8 tests frais plateforme passes
-- 100% success rate sur tous les tests
-
 ## Admin Access
 ADMIN_EMAILS env var: admin@savyn.com, slimimoez@gmail.com
+
+## Testing
+- 47+ backend tests, security/penetration/load tests, 100% pass rate
 
 ## Backlog
 - P0: Real Lemon Way (needs API keys)
