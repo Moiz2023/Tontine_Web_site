@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Button } from '../components/ui/button';
@@ -13,21 +13,37 @@ export default function PaymentSuccessPage() {
   const [status, setStatus] = useState('checking');
   const [paymentInfo, setPaymentInfo] = useState(null);
 
+  // FIX: use a ref to track the timeout and a mounted flag
+  // so we can cancel polling if the user navigates away
+  const timeoutRef = useRef(null);
+  const isMountedRef = useRef(true);
+
   useEffect(() => {
+    isMountedRef.current = true;
+
     const sessionId = searchParams.get('session_id');
     if (sessionId) {
       pollPaymentStatus(sessionId);
     } else {
       setStatus('error');
     }
-  }, [searchParams]);
+
+    // Cleanup: cancel any pending timeout on unmount
+    return () => {
+      isMountedRef.current = false;
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const pollPaymentStatus = async (sessionId, attempts = 0) => {
     const maxAttempts = 5;
     const pollInterval = 2000;
 
     if (attempts >= maxAttempts) {
-      setStatus('timeout');
+      if (isMountedRef.current) setStatus('timeout');
       return;
     }
 
@@ -35,6 +51,9 @@ export default function PaymentSuccessPage() {
       const response = await axios.get(`${API}/payments/status/${sessionId}`, {
         withCredentials: true
       });
+
+      // Guard: don't update state if component has unmounted
+      if (!isMountedRef.current) return;
 
       if (response.data.payment_status === 'paid') {
         setStatus('success');
@@ -45,11 +64,14 @@ export default function PaymentSuccessPage() {
         return;
       }
 
-      // Continue polling
-      setTimeout(() => pollPaymentStatus(sessionId, attempts + 1), pollInterval);
+      // Schedule next poll, storing the timeout ref so it can be cancelled
+      timeoutRef.current = setTimeout(
+        () => pollPaymentStatus(sessionId, attempts + 1),
+        pollInterval
+      );
     } catch (error) {
       console.error('Error checking payment:', error);
-      setStatus('error');
+      if (isMountedRef.current) setStatus('error');
     }
   };
 
@@ -112,7 +134,7 @@ export default function PaymentSuccessPage() {
             </div>
             <h2 className="text-2xl font-bold text-gray-900 mb-4">Erreur de paiement</h2>
             <p className="text-gray-600 mb-6">
-              Une erreur est survenue lors de la vérification du paiement. 
+              Une erreur est survenue lors de la vérification du paiement.
               Veuillez vérifier votre email pour confirmation.
             </p>
             <Button

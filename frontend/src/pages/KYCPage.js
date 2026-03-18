@@ -9,9 +9,45 @@ import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { toast } from 'sonner';
 import axios from 'axios';
-import { Shield, CreditCard, MapPin, CheckCircle, Loader2, FileText } from 'lucide-react';
+import { Shield, CreditCard, MapPin, CheckCircle, Loader2, FileText, AlertCircle } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+
+// ---------------------------------------------------------------------------
+// FIX: IBAN validation helper
+// Validates format (country prefix + length) and MOD-97 checksum
+// ---------------------------------------------------------------------------
+function validateIBAN(raw) {
+  const iban = raw.replace(/\s+/g, '').toUpperCase();
+
+  // Country code → expected length map (subset covering supported countries)
+  const lengths = { FR: 27, BE: 16, CH: 21, LU: 20 };
+  const country = iban.slice(0, 2);
+  const expected = lengths[country];
+
+  if (!expected) return 'Pays IBAN non supporté (FR, BE, CH, LU)';
+  if (iban.length !== expected)
+    return `Un IBAN ${country} doit comporter ${expected} caractères (vous en avez ${iban.length})`;
+
+  // MOD-97 check
+  const rearranged = iban.slice(4) + iban.slice(0, 4);
+  const numeric = rearranged.split('').map(c => {
+    const n = c.charCodeAt(0);
+    return n >= 65 ? (n - 55).toString() : c;
+  }).join('');
+  let remainder = 0;
+  for (const ch of numeric) {
+    remainder = (remainder * 10 + parseInt(ch, 10)) % 97;
+  }
+  if (remainder !== 1) return 'IBAN invalide – vérifiez le numéro saisi';
+  return null; // valid
+}
+
+// Show only last 4 chars for display after submission
+function maskIBAN(iban) {
+  const clean = iban.replace(/\s+/g, '');
+  return clean.slice(0, 2) + '•••• •••• •••• ' + clean.slice(-4);
+}
 
 export default function KYCPage() {
   const { t } = useLanguage();
@@ -19,6 +55,8 @@ export default function KYCPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(1);
+  const [ibanError, setIbanError] = useState('');
+  const [ibanConfirmed, setIbanConfirmed] = useState(false);
   const [formData, setFormData] = useState({
     id_type: 'id_card',
     id_number: '',
@@ -29,17 +67,45 @@ export default function KYCPage() {
     country: 'FR'
   });
 
-  // Redirect if not authenticated
+  // FIX: redirect if not authenticated (server also enforces this)
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
       navigate('/login');
     }
   }, [authLoading, isAuthenticated, navigate]);
 
+  // FIX: validate IBAN on change instead of only at submit
+  const handleIBANChange = (e) => {
+    const raw = e.target.value.toUpperCase();
+    setFormData({ ...formData, iban: raw });
+    setIbanConfirmed(false);
+    if (raw.replace(/\s+/g, '').length >= 16) {
+      setIbanError(validateIBAN(raw) || '');
+    } else {
+      setIbanError('');
+    }
+  };
+
+  const handleIBANBlur = () => {
+    const error = validateIBAN(formData.iban);
+    setIbanError(error || '');
+    if (!error) setIbanConfirmed(true);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // FIX: final IBAN check before submitting to backend
+    const ibanValidationError = validateIBAN(formData.iban);
+    if (ibanValidationError) {
+      setIbanError(ibanValidationError);
+      toast.error('Veuillez corriger l\'IBAN avant de continuer');
+      return;
+    }
+
     setLoading(true);
     try {
+      // Send only what the backend needs; IBAN is sent over TLS only
       await axios.post(`${API}/kyc/submit`, formData, { withCredentials: true });
       updateUser({ kyc_status: 'verified' });
       toast.success('Vérification KYC réussie !');
@@ -52,7 +118,6 @@ export default function KYCPage() {
     }
   };
 
-  // Show loading while checking auth
   if (authLoading) {
     return (
       <div className="min-h-screen bg-[#F9FAFB] flex items-center justify-center py-12 px-4">
@@ -121,6 +186,7 @@ export default function KYCPage() {
 
           <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
             <form onSubmit={handleSubmit}>
+
               {/* Step 1: Identity Document */}
               {step === 1 && (
                 <motion.div
@@ -193,21 +259,47 @@ export default function KYCPage() {
 
                   <div>
                     <Label className="text-gray-700">{t('kyc.iban')}</Label>
-                    <Input
-                      value={formData.iban}
-                      onChange={(e) => setFormData({ ...formData, iban: e.target.value.toUpperCase() })}
-                      placeholder="FR76 1234 5678 9012 3456 7890 123"
-                      className="mt-2 h-12 bg-gray-50 border-transparent focus:bg-white focus:border-[#2E5C55] font-mono"
-                      required
-                      data-testid="kyc-iban-input"
-                    />
+                    <div className="relative mt-2">
+                      <Input
+                        value={formData.iban}
+                        onChange={handleIBANChange}
+                        onBlur={handleIBANBlur}
+                        placeholder="FR76 1234 5678 9012 3456 7890 123"
+                        className={`h-12 bg-gray-50 border-transparent focus:bg-white font-mono ${
+                          ibanError
+                            ? 'border-red-400 focus:border-red-400 bg-red-50'
+                            : ibanConfirmed
+                            ? 'border-green-400 focus:border-green-400'
+                            : 'focus:border-[#2E5C55]'
+                        }`}
+                        required
+                        data-testid="kyc-iban-input"
+                      />
+                      {/* FIX: show checkmark when IBAN is valid */}
+                      {ibanConfirmed && !ibanError && (
+                        <CheckCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-green-500" />
+                      )}
+                      {ibanError && (
+                        <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-red-500" />
+                      )}
+                    </div>
+                    {ibanError && (
+                      <p className="mt-1 text-sm text-red-600" data-testid="kyc-iban-error">{ibanError}</p>
+                    )}
+                    {/* FIX: show masked preview once confirmed */}
+                    {ibanConfirmed && !ibanError && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        Enregistré : {maskIBAN(formData.iban)}
+                      </p>
+                    )}
                   </div>
 
                   <div className="bg-blue-50 rounded-xl p-4 flex items-start gap-3">
                     <Shield className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
                     <p className="text-sm text-blue-800">
-                      Votre IBAN est utilisé uniquement pour les prélèvements SEPA automatiques. 
-                      Vos données sont sécurisées et cryptées.
+                      Votre IBAN est utilisé uniquement pour les prélèvements SEPA automatiques.
+                      Vos données sont sécurisées et chiffrées — seuls les 4 derniers chiffres
+                      seront affichés après confirmation.
                     </p>
                   </div>
 
@@ -223,9 +315,14 @@ export default function KYCPage() {
                     </Button>
                     <Button
                       type="button"
-                      onClick={() => setStep(3)}
+                      onClick={() => {
+                        const error = validateIBAN(formData.iban);
+                        if (error) { setIbanError(error); return; }
+                        setIbanConfirmed(true);
+                        setStep(3);
+                      }}
                       className="flex-1 h-12 bg-[#2E5C55] hover:bg-[#254a44] text-white rounded-lg"
-                      disabled={!formData.iban}
+                      disabled={!formData.iban || !!ibanError}
                       data-testid="kyc-step2-next-btn"
                     >
                       {t('common.next')}

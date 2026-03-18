@@ -1,10 +1,19 @@
-import { useTheme } from "next-themes"
 import { Toaster as Sonner, toast } from "sonner"
 
-const Toaster = ({
-  ...props
-}) => {
-  const { theme = "system" } = useTheme()
+// FIX: removed `import { useTheme } from "next-themes"` — next-themes is a
+// Next.js package and will cause an error or require an unneeded dependency
+// in a CRA / Vite React app. We detect dark mode directly from the browser
+// using matchMedia, which is reliable and has no extra dependencies.
+
+function useAppTheme() {
+  const prefersDark =
+    typeof window !== "undefined" &&
+    window.matchMedia("(prefers-color-scheme: dark)").matches
+  return prefersDark ? "dark" : "light"
+}
+
+const Toaster = ({ ...props }) => {
+  const theme = useAppTheme()
 
   return (
     <Sonner
@@ -22,7 +31,7 @@ const Toaster = ({
         },
       }}
       {...props} />
-  );
+  )
 }
 
 export { Toaster, toast }

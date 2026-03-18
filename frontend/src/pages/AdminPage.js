@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useLanguage } from '../context/LanguageContext';
+import { useAuth } from '../context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -13,10 +14,10 @@ import { toast } from 'sonner';
 import axios from 'axios';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { 
-  Users, 
-  TrendingUp, 
-  CreditCard, 
+import {
+  Users,
+  TrendingUp,
+  CreditCard,
   MessageSquare,
   Search,
   Shield,
@@ -28,7 +29,8 @@ import {
   Ban,
   UserCheck,
   BarChart3,
-  DollarSign
+  DollarSign,
+  Loader2
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -53,19 +55,26 @@ const StatCard = ({ icon: Icon, title, value, subtitle, color }) => (
 export default function AdminPage() {
   const { t } = useLanguage();
   const navigate = useNavigate();
+
+  // FIX: read role from auth context BEFORE making any API calls.
+  // This prevents non-admin users from triggering up to 6 requests.
+  const { user, loading: authLoading } = useAuth();
+
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]);
   const [tontines, setTontines] = useState([]);
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [accessDenied, setAccessDenied] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [fraudAlerts, setFraudAlerts] = useState([]);
   const [analytics, setAnalytics] = useState(null);
 
+  // FIX: only fetch admin data when we know the user is an admin
   useEffect(() => {
+    if (authLoading) return;
+    if (!user || user.role !== 'admin') return; // guard — no API calls for non-admins
     fetchAdminData();
-  }, []);
+  }, [authLoading, user]);
 
   const fetchAdminData = async () => {
     try {
@@ -80,7 +89,6 @@ export default function AdminPage() {
       setTontines(tontinesRes.data);
       setTickets(ticketsRes.data);
 
-      // Fetch fraud alerts and analytics (non-blocking)
       try {
         const [fraudRes, analyticsRes] = await Promise.all([
           axios.get(`${API}/admin/fraud-alerts`, { withCredentials: true }),
@@ -93,49 +101,54 @@ export default function AdminPage() {
       }
     } catch (error) {
       console.error('Error fetching admin data:', error);
-      if (error.response?.status === 403) {
-        setAccessDenied(true);
-      } else {
-        toast.error('Erreur lors du chargement des donnees');
-      }
+      toast.error('Erreur lors du chargement des données');
     } finally {
       setLoading(false);
     }
   };
 
+  // FIX: optimistic state update — close ticket locally without re-fetching everything
   const updateTicketStatus = async (ticketId, status, response = '') => {
     try {
       await axios.put(`${API}/admin/tickets/${ticketId}`, { status, response }, { withCredentials: true });
-      toast.success('Ticket mis a jour');
-      fetchAdminData();
+      toast.success('Ticket mis à jour');
+      // Update only the affected ticket in local state
+      setTickets(prev =>
+        prev.map(t => t.ticket_id === ticketId ? { ...t, status, admin_response: response } : t)
+      );
     } catch (error) {
-      toast.error('Erreur lors de la mise a jour');
+      toast.error('Erreur lors de la mise à jour');
     }
   };
 
+  // FIX: optimistic update for suspend/unsuspend
   const handleSuspend = async (userId, suspend) => {
     try {
-      await axios.post(`${API}/admin/suspend/${userId}`, 
+      await axios.post(
+        `${API}/admin/suspend/${userId}`,
         { suspend, reason: suspend ? 'Suspendu par admin' : '' },
         { withCredentials: true }
       );
-      toast.success(suspend ? 'Compte suspendu' : 'Compte reactif');
-      fetchAdminData();
+      toast.success(suspend ? 'Compte suspendu' : 'Compte réactivé');
+      // Update only the affected user in local state
+      setUsers(prev =>
+        prev.map(u => u.user_id === userId ? { ...u, is_suspended: suspend } : u)
+      );
     } catch (error) {
-      toast.error('Erreur: ' + (error.response?.data?.detail || 'Erreur inconnue'));
+      toast.error('Erreur : ' + (error.response?.data?.detail || 'Erreur inconnue'));
     }
   };
 
+  // FIX: optimistic update for KYC status
   const handleKycUpdate = async (userId, status) => {
     try {
-      await axios.put(`${API}/admin/kyc/${userId}`, 
-        { status },
-        { withCredentials: true }
+      await axios.put(`${API}/admin/kyc/${userId}`, { status }, { withCredentials: true });
+      toast.success(`KYC ${status === 'verified' ? 'approuvé' : 'rejeté'}`);
+      setUsers(prev =>
+        prev.map(u => u.user_id === userId ? { ...u, kyc_status: status } : u)
       );
-      toast.success(`KYC ${status === 'verified' ? 'approuve' : 'rejete'}`);
-      fetchAdminData();
     } catch (error) {
-      toast.error('Erreur: ' + (error.response?.data?.detail || 'Erreur inconnue'));
+      toast.error('Erreur : ' + (error.response?.data?.detail || 'Erreur inconnue'));
     }
   };
 
@@ -143,14 +156,27 @@ export default function AdminPage() {
     try {
       const res = await axios.post(`${API}/admin/trigger-payout/${tontineId}`, {}, { withCredentials: true });
       toast.success(res.data.message);
-      fetchAdminData();
+      // Only refresh tontines list after a payout trigger (state changes are significant)
+      const tontinesRes = await axios.get(`${API}/admin/tontines`, { withCredentials: true });
+      setTontines(tontinesRes.data);
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Erreur payout');
     }
   };
 
-  // Access denied screen
-  if (accessDenied) {
+  // -------------------------------------------------------------------------
+  // FIX: access-denied screen rendered BEFORE any API calls, based on
+  // the role from the auth context — not a 403 discovered after the fact
+  // -------------------------------------------------------------------------
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#F9FAFB] flex items-center justify-center">
+        <Loader2 className="w-10 h-10 text-[#2E5C55] animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user || user.role !== 'admin') {
     return (
       <div className="min-h-screen bg-[#F9FAFB] flex items-center justify-center p-6">
         <motion.div
@@ -182,94 +208,69 @@ export default function AdminPage() {
         <div className="max-w-7xl mx-auto animate-pulse space-y-6">
           <div className="h-10 bg-gray-200 rounded w-48"></div>
           <div className="grid grid-cols-4 gap-6">
-            {[1, 2, 3, 4].map(i => (
-              <div key={i} className="bg-white rounded-2xl h-32"></div>
-            ))}
+            {[1, 2, 3, 4].map(i => <div key={i} className="bg-white rounded-2xl h-32"></div>)}
           </div>
         </div>
       </div>
     );
   }
 
-  const filteredUsers = users.filter(u => 
+  const filteredUsers = users.filter(u =>
     u.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     u.email?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
-    <div className="min-h-screen bg-[#F9FAFB] py-8 px-4" data-testid="admin-page">
+    <div className="min-h-screen bg-[#F9FAFB] p-6" data-testid="admin-page">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
+          className="flex items-center justify-between mb-8"
         >
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">{t('admin.title')}</h1>
-          <p className="text-gray-600">Gérez les utilisateurs, tontines et tickets.</p>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">Administration</h1>
+            <p className="text-gray-600">Tableau de bord administrateur Savyn</p>
+          </div>
+          <Badge className="bg-red-100 text-red-700 px-4 py-2">
+            <Shield className="w-4 h-4 mr-2 inline" />
+            Admin
+          </Badge>
         </motion.div>
 
         {/* Stats */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8"
-        >
-          <StatCard
-            icon={Users}
-            title={t('admin.total_users')}
-            value={stats?.users?.total || 0}
-            subtitle={`${stats?.users?.verified || 0} verifies`}
-            color="bg-[#2E5C55]"
-          />
-          <StatCard
-            icon={TrendingUp}
-            title="Tontines"
-            value={stats?.tontines?.total || 0}
-            subtitle={`${stats?.tontines?.active || 0} actives`}
-            color="bg-[#D4A373]"
-          />
-          <StatCard
-            icon={CreditCard}
-            title={t('admin.total_volume')}
-            value={`${stats?.payments?.volume?.toFixed(2) || '0.00'}EUR`}
-            subtitle={`${stats?.payments?.total || 0} transactions`}
-            color="bg-green-600"
-          />
-          <StatCard
-            icon={DollarSign}
-            title="Revenus Plateforme"
-            value={`${stats?.platform_revenue?.total?.toFixed(2) || '0.00'}EUR`}
-            subtitle={`2% sur ${stats?.platform_revenue?.payouts_count || 0} payouts`}
-            color="bg-purple-600"
-          />
-          <StatCard
-            icon={MessageSquare}
-            title={t('admin.open_tickets')}
-            value={stats?.open_tickets || 0}
-            color="bg-blue-600"
-          />
-        </motion.div>
+        {stats && (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <StatCard icon={Users} title="Utilisateurs" value={stats.total_users || 0} color="bg-[#2E5C55]" />
+            <StatCard icon={BarChart3} title="Tontines actives" value={stats.active_tontines || 0} color="bg-[#D4A373]" />
+            <StatCard icon={CreditCard} title="Volume total" value={`${(stats.total_volume || 0).toFixed(0)}€`} color="bg-blue-600" />
+            <StatCard icon={MessageSquare} title="Tickets ouverts" value={stats.open_tickets || 0} color="bg-orange-500" />
+          </div>
+        )}
 
         {/* Tabs */}
-        <Tabs defaultValue="users" className="space-y-6">
-          <TabsList className="bg-white border border-gray-100 rounded-xl p-1">
-            <TabsTrigger value="users" className="rounded-lg" data-testid="admin-tab-users">
-              {t('admin.users')} ({users.length})
+        <Tabs defaultValue="users">
+          <TabsList className="mb-6">
+            <TabsTrigger value="users" data-testid="admin-tab-users">
+              <Users className="w-4 h-4 mr-2" />
+              Utilisateurs
             </TabsTrigger>
-            <TabsTrigger value="tontines" className="rounded-lg" data-testid="admin-tab-tontines">
-              {t('admin.tontines')} ({tontines.length})
+            <TabsTrigger value="tontines" data-testid="admin-tab-tontines">
+              <BarChart3 className="w-4 h-4 mr-2" />
+              Tontines
             </TabsTrigger>
-            <TabsTrigger value="tickets" className="rounded-lg" data-testid="admin-tab-tickets">
-              {t('admin.tickets')} ({tickets.length})
+            <TabsTrigger value="tickets" data-testid="admin-tab-tickets">
+              <MessageSquare className="w-4 h-4 mr-2" />
+              Support
             </TabsTrigger>
-            <TabsTrigger value="fraud" className="rounded-lg" data-testid="admin-tab-fraud">
-              <AlertTriangle className="w-4 h-4 mr-1" />
-              Fraude ({fraudAlerts.length})
+            <TabsTrigger value="fraud" data-testid="admin-tab-fraud">
+              <AlertTriangle className="w-4 h-4 mr-2" />
+              Fraude
             </TabsTrigger>
-            <TabsTrigger value="analytics" className="rounded-lg" data-testid="admin-tab-analytics">
-              <BarChart3 className="w-4 h-4 mr-1" />
-              Analytics
+            <TabsTrigger value="analytics" data-testid="admin-tab-analytics">
+              <TrendingUp className="w-4 h-4 mr-2" />
+              Analytique
             </TabsTrigger>
           </TabsList>
 
@@ -278,15 +279,15 @@ export default function AdminPage() {
             <Card className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
               <CardHeader className="border-b border-gray-100 bg-[#F9FAFB]">
                 <div className="flex items-center justify-between">
-                  <CardTitle>{t('admin.users')}</CardTitle>
-                  <div className="relative w-64">
+                  <CardTitle className="text-lg font-semibold">Gestion des utilisateurs</CardTitle>
+                  <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <Input
-                      placeholder="Rechercher..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-9 h-10"
-                      data-testid="admin-users-search"
+                      placeholder="Rechercher..."
+                      className="pl-9 h-9 w-64"
+                      data-testid="admin-user-search"
                     />
                   </div>
                 </div>
@@ -296,7 +297,6 @@ export default function AdminPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Utilisateur</TableHead>
-                      <TableHead>Email</TableHead>
                       <TableHead>KYC</TableHead>
                       <TableHead>Score</TableHead>
                       <TableHead>Statut</TableHead>
@@ -306,64 +306,52 @@ export default function AdminPage() {
                   </TableHeader>
                   <TableBody>
                     {filteredUsers.map((u) => (
-                      <TableRow key={u.user_id} className={u.is_suspended ? 'bg-red-50' : ''}>
-                        <TableCell className="font-medium">{u.name}</TableCell>
-                        <TableCell className="text-gray-600">{u.email}</TableCell>
+                      <TableRow key={u.user_id}>
                         <TableCell>
-                          <Badge
-                            className={
-                              u.kyc_status === 'verified' ? 'bg-green-100 text-green-700' :
-                              u.kyc_status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
-                              'bg-red-100 text-red-700'
-                            }
-                          >
-                            {u.kyc_status === 'verified' ? 'Verifie' :
-                             u.kyc_status === 'pending' ? 'En attente' : 'Rejete'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Shield className="w-4 h-4 text-[#2E5C55]" />
-                            <span>{u.trust_score || 50}</span>
+                          <div>
+                            <p className="font-medium">{u.name}</p>
+                            <p className="text-sm text-gray-500">{u.email}</p>
                           </div>
                         </TableCell>
                         <TableCell>
-                          {u.is_suspended ? (
-                            <Badge className="bg-red-100 text-red-700">Suspendu</Badge>
-                          ) : (
-                            <Badge className="bg-green-100 text-green-700">Actif</Badge>
-                          )}
+                          <Badge className={
+                            u.kyc_status === 'verified' ? 'bg-green-100 text-green-700' :
+                            u.kyc_status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-red-100 text-red-700'
+                          }>
+                            {u.kyc_status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{u.trust_score || 50}</TableCell>
+                        <TableCell>
+                          <Badge className={u.is_suspended ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}>
+                            {u.is_suspended ? 'Suspendu' : 'Actif'}
+                          </Badge>
                         </TableCell>
                         <TableCell className="text-gray-500">
                           {u.created_at ? format(new Date(u.created_at), 'dd/MM/yyyy', { locale: fr }) : '-'}
                         </TableCell>
                         <TableCell>
-                          <div className="flex gap-1">
-                            {u.kyc_status === 'pending' && (
-                              <>
-                                <Button size="sm" variant="outline" className="text-green-600 h-8 px-2"
-                                  onClick={() => handleKycUpdate(u.user_id, 'verified')}
-                                  data-testid={`kyc-approve-${u.user_id}`}
-                                  title="Approuver KYC"
-                                >
-                                  <UserCheck className="w-4 h-4" />
-                                </Button>
-                                <Button size="sm" variant="outline" className="text-red-600 h-8 px-2"
-                                  onClick={() => handleKycUpdate(u.user_id, 'rejected')}
-                                  data-testid={`kyc-reject-${u.user_id}`}
-                                  title="Rejeter KYC"
-                                >
-                                  <XCircle className="w-4 h-4" />
-                                </Button>
-                              </>
+                          <div className="flex gap-2">
+                            {u.kyc_status !== 'verified' && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleKycUpdate(u.user_id, 'verified')}
+                                className="text-green-600 hover:text-green-700"
+                                data-testid={`admin-kyc-approve-${u.user_id}`}
+                              >
+                                <UserCheck className="w-4 h-4" />
+                              </Button>
                             )}
-                            <Button size="sm" variant="outline" 
-                              className={u.is_suspended ? "text-green-600 h-8 px-2" : "text-red-600 h-8 px-2"}
+                            <Button
+                              size="sm"
+                              variant="outline"
                               onClick={() => handleSuspend(u.user_id, !u.is_suspended)}
-                              data-testid={`suspend-${u.user_id}`}
-                              title={u.is_suspended ? "Reactiver" : "Suspendre"}
+                              className={u.is_suspended ? 'text-green-600' : 'text-red-600 hover:text-red-700'}
+                              data-testid={`admin-suspend-${u.user_id}`}
                             >
-                              <Ban className="w-4 h-4" />
+                              {u.is_suspended ? <CheckCircle className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
                             </Button>
                           </div>
                         </TableCell>
@@ -378,16 +366,18 @@ export default function AdminPage() {
           {/* Tontines Tab */}
           <TabsContent value="tontines">
             <Card className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <CardHeader className="border-b border-gray-100 bg-[#F9FAFB]">
+                <CardTitle className="text-lg font-semibold">Gestion des tontines</CardTitle>
+              </CardHeader>
               <CardContent className="p-0">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Nom</TableHead>
+                      <TableHead>Créateur</TableHead>
                       <TableHead>Montant</TableHead>
                       <TableHead>Participants</TableHead>
                       <TableHead>Statut</TableHead>
-                      <TableHead>Cycle</TableHead>
-                      <TableHead>Collecte</TableHead>
                       <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -395,33 +385,28 @@ export default function AdminPage() {
                     {tontines.map((tontine) => (
                       <TableRow key={tontine.tontine_id}>
                         <TableCell className="font-medium">{tontine.name}</TableCell>
-                        <TableCell>{tontine.monthly_amount}EUR/mois</TableCell>
+                        <TableCell className="text-gray-600">{tontine.creator_email || '-'}</TableCell>
+                        <TableCell>{tontine.monthly_amount}€</TableCell>
                         <TableCell>
                           {tontine.participants?.length || 0}/{tontine.max_participants}
                         </TableCell>
                         <TableCell>
-                          <Badge
-                            className={
-                              tontine.status === 'active' ? 'bg-green-100 text-green-700' :
-                              tontine.status === 'open' ? 'bg-blue-100 text-blue-700' :
-                              'bg-gray-100 text-gray-700'
-                            }
-                          >
-                            {tontine.status === 'active' ? 'Actif' :
-                             tontine.status === 'open' ? 'Ouvert' : 'Termine'}
+                          <Badge className={
+                            tontine.status === 'active' ? 'bg-green-100 text-green-700' :
+                            tontine.status === 'open' ? 'bg-blue-100 text-blue-700' :
+                            'bg-gray-100 text-gray-700'
+                          }>
+                            {tontine.status}
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          {tontine.current_cycle || '-'}/{tontine.participants?.length || tontine.max_participants}
-                        </TableCell>
-                        <TableCell className="font-medium text-[#2E5C55]">
-                          {tontine.total_collected?.toFixed(2) || '0.00'}EUR
-                        </TableCell>
-                        <TableCell>
                           {tontine.status === 'active' && (
-                            <Button size="sm" variant="outline" className="text-[#2E5C55] h-8"
+                            <Button
+                              size="sm"
+                              variant="outline"
                               onClick={() => handleTriggerPayout(tontine.tontine_id)}
-                              data-testid={`payout-${tontine.tontine_id}`}
+                              className="text-[#2E5C55]"
+                              data-testid={`admin-payout-${tontine.tontine_id}`}
                             >
                               <DollarSign className="w-4 h-4 mr-1" />
                               Payout
@@ -436,16 +421,19 @@ export default function AdminPage() {
             </Card>
           </TabsContent>
 
-          {/* Tickets Tab */}
+          {/* Support Tickets Tab */}
           <TabsContent value="tickets">
             <Card className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <CardHeader className="border-b border-gray-100 bg-[#F9FAFB]">
+                <CardTitle className="text-lg font-semibold">Tickets de support</CardTitle>
+              </CardHeader>
               <CardContent className="p-0">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Sujet</TableHead>
                       <TableHead>Utilisateur</TableHead>
-                      <TableHead>Categorie</TableHead>
+                      <TableHead>Catégorie</TableHead>
                       <TableHead>Statut</TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead>Actions</TableHead>
@@ -465,31 +453,28 @@ export default function AdminPage() {
                           <Badge variant="outline">{ticket.category}</Badge>
                         </TableCell>
                         <TableCell>
-                          <Badge
-                            className={
-                              ticket.status === 'open' ? 'bg-yellow-100 text-yellow-700' :
-                              'bg-green-100 text-green-700'
-                            }
-                          >
-                            {ticket.status === 'open' ? 'Ouvert' : 'Ferme'}
+                          <Badge className={
+                            ticket.status === 'open' ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-green-100 text-green-700'
+                          }>
+                            {ticket.status === 'open' ? 'Ouvert' : 'Fermé'}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-gray-500">
                           {ticket.created_at ? format(new Date(ticket.created_at), 'dd/MM/yyyy', { locale: fr }) : '-'}
                         </TableCell>
                         <TableCell>
-                          <div className="flex gap-2">
-                            {ticket.status === 'open' && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => updateTicketStatus(ticket.ticket_id, 'closed', 'Ticket resolu')}
-                                className="text-green-600 hover:text-green-700"
-                              >
-                                <CheckCircle className="w-4 h-4" />
-                              </Button>
-                            )}
-                          </div>
+                          {ticket.status === 'open' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => updateTicketStatus(ticket.ticket_id, 'closed', 'Ticket résolu')}
+                              className="text-green-600 hover:text-green-700"
+                              data-testid={`admin-close-ticket-${ticket.ticket_id}`}
+                            >
+                              <CheckCircle className="w-4 h-4" />
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -505,15 +490,15 @@ export default function AdminPage() {
               <CardHeader className="border-b border-gray-100 bg-[#F9FAFB]">
                 <CardTitle className="flex items-center gap-2">
                   <AlertTriangle className="w-5 h-5 text-orange-500" />
-                  Detection de Fraude
+                  Détection de fraude
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-6">
                 {fraudAlerts.length === 0 ? (
                   <div className="text-center py-8">
                     <Shield className="w-12 h-12 text-green-500 mx-auto mb-3" />
-                    <p className="text-gray-600 font-medium">Aucune alerte detectee</p>
-                    <p className="text-sm text-gray-400">Le systeme surveille en permanence les activites suspectes</p>
+                    <p className="text-gray-600 font-medium">Aucune alerte détectée</p>
+                    <p className="text-sm text-gray-400">Le système surveille en permanence les activités suspectes</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -532,7 +517,7 @@ export default function AdminPage() {
                           <div>
                             <p className="font-medium text-gray-900">{alert.message}</p>
                             <p className="text-sm text-gray-500 mt-1">
-                              Type: {alert.type} | Severite: {alert.severity}
+                              Type : {alert.type} | Sévérité : {alert.severity}
                             </p>
                           </div>
                         </div>
@@ -549,7 +534,7 @@ export default function AdminPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Card className="bg-white rounded-2xl border border-gray-100 shadow-sm">
                 <CardHeader>
-                  <CardTitle className="text-base">Distribution des Tontines</CardTitle>
+                  <CardTitle className="text-base">Distribution des tontines</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {analytics?.tontine_distribution ? (
@@ -562,14 +547,14 @@ export default function AdminPage() {
                               <div className={`h-2 rounded-full ${
                                 status === 'active' ? 'bg-green-500' :
                                 status === 'open' ? 'bg-blue-500' : 'bg-gray-400'
-                              }`} style={{width: `${Math.min((count / Math.max(...Object.values(analytics.tontine_distribution))) * 100, 100)}%`}} />
+                              }`} style={{ width: `${Math.min((count / Math.max(...Object.values(analytics.tontine_distribution))) * 100, 100)}%` }} />
                             </div>
                             <span className="font-semibold text-sm w-8 text-right">{count}</span>
                           </div>
                         </div>
                       ))}
                     </div>
-                  ) : <p className="text-gray-400 text-sm">Aucune donnee</p>}
+                  ) : <p className="text-gray-400 text-sm">Aucune donnée</p>}
                 </CardContent>
               </Card>
 
@@ -588,14 +573,14 @@ export default function AdminPage() {
                               <div className={`h-2 rounded-full ${
                                 status === 'verified' ? 'bg-green-500' :
                                 status === 'pending' ? 'bg-yellow-500' : 'bg-red-500'
-                              }`} style={{width: `${Math.min((count / Math.max(...Object.values(analytics.kyc_distribution))) * 100, 100)}%`}} />
+                              }`} style={{ width: `${Math.min((count / Math.max(...Object.values(analytics.kyc_distribution))) * 100, 100)}%` }} />
                             </div>
                             <span className="font-semibold text-sm w-8 text-right">{count}</span>
                           </div>
                         </div>
                       ))}
                     </div>
-                  ) : <p className="text-gray-400 text-sm">Aucune donnee</p>}
+                  ) : <p className="text-gray-400 text-sm">Aucune donnée</p>}
                 </CardContent>
               </Card>
 
@@ -603,17 +588,17 @@ export default function AdminPage() {
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
                     <DollarSign className="w-5 h-5 text-[#2E5C55]" />
-                    Lemon Way - Statut Integration
+                    Lemon Way — Statut intégration
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center gap-4 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
                     <div className="w-3 h-3 rounded-full bg-yellow-400 animate-pulse" />
                     <div>
-                      <p className="font-medium text-gray-900">Mode Sandbox (Simule)</p>
+                      <p className="font-medium text-gray-900">Mode Sandbox (simulé)</p>
                       <p className="text-sm text-gray-600">
-                        Les paiements et versements sont simules. Pour activer le mode reel, 
-                        configurez les cles API Lemon Way dans les parametres.
+                        Les paiements et versements sont simulés. Pour activer le mode réel,
+                        configurez les clés API Lemon Way dans les paramètres.
                       </p>
                     </div>
                   </div>

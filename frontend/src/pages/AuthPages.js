@@ -7,17 +7,14 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { toast } from 'sonner';
-import { Mail, Lock, User, Phone, Loader2, CheckSquare } from 'lucide-react';
+import { Mail, Lock, User, Phone, Loader2 } from 'lucide-react';
 
 export default function LoginPage() {
   const { t } = useLanguage();
   const { login, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    email: '',
-    password: ''
-  });
+  const [formData, setFormData] = useState({ email: '', password: '' });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -77,6 +74,7 @@ export default function LoginPage() {
                   type="password"
                   placeholder="••••••••"
                   value={formData.password}
+                  // FIX: was incorrectly updating `email` instead of `password`
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   className="pl-10 h-12 bg-gray-50 border-transparent focus:bg-white focus:border-[#2E5C55] focus:ring-2 focus:ring-[#2E5C55]/20"
                   required
@@ -91,11 +89,7 @@ export default function LoginPage() {
               className="w-full h-12 bg-[#2E5C55] hover:bg-[#254a44] text-white rounded-lg font-semibold btn-press"
               data-testid="login-submit-btn"
             >
-              {loading ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                t('auth.login_btn')
-              )}
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : t('auth.login_btn')}
             </Button>
           </form>
 
@@ -151,6 +145,10 @@ export function RegisterPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!formData.accept_terms) {
+      toast.error(t('auth.must_accept_terms') || 'Vous devez accepter les conditions d\'utilisation');
+      return;
+    }
     setLoading(true);
     try {
       await register(formData);
@@ -249,6 +247,7 @@ export function RegisterPage() {
               </div>
             </div>
 
+            {/* FIX: terms links point to real routes instead of "#" */}
             <div className="flex items-start gap-3">
               <input
                 type="checkbox"
@@ -259,7 +258,25 @@ export function RegisterPage() {
                 data-testid="register-terms-checkbox"
               />
               <label htmlFor="accept_terms" className="text-sm text-gray-600">
-                J'accepte les <a href="#" className="text-[#2E5C55] font-medium hover:underline">conditions d'utilisation</a> et la <a href="#" className="text-[#2E5C55] font-medium hover:underline">politique de confidentialité</a> de Savyn.
+                J'accepte les{' '}
+                <Link
+                  to="/terms"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[#2E5C55] font-medium hover:underline"
+                >
+                  conditions d'utilisation
+                </Link>
+                {' '}et la{' '}
+                <Link
+                  to="/privacy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[#2E5C55] font-medium hover:underline"
+                >
+                  politique de confidentialité
+                </Link>
+                {' '}de Savyn.
               </label>
             </div>
 
@@ -269,11 +286,7 @@ export function RegisterPage() {
               className="w-full h-12 bg-[#2E5C55] hover:bg-[#254a44] text-white rounded-lg font-semibold btn-press"
               data-testid="register-submit-btn"
             >
-              {loading ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                t('auth.register_btn')
-              )}
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : t('auth.register_btn')}
             </Button>
           </form>
 

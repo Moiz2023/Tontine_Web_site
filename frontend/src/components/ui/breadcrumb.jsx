@@ -30,13 +30,12 @@ BreadcrumbItem.displayName = "BreadcrumbItem"
 
 const BreadcrumbLink = React.forwardRef(({ asChild, className, ...props }, ref) => {
   const Comp = asChild ? Slot : "a"
-
   return (
     <Comp
       ref={ref}
       className={cn("transition-colors hover:text-foreground", className)}
       {...props} />
-  );
+  )
 })
 BreadcrumbLink.displayName = "BreadcrumbLink"
 
@@ -51,11 +50,7 @@ const BreadcrumbPage = React.forwardRef(({ className, ...props }, ref) => (
 ))
 BreadcrumbPage.displayName = "BreadcrumbPage"
 
-const BreadcrumbSeparator = ({
-  children,
-  className,
-  ...props
-}) => (
+const BreadcrumbSeparator = ({ children, className, ...props }) => (
   <li
     role="presentation"
     aria-hidden="true"
@@ -66,10 +61,7 @@ const BreadcrumbSeparator = ({
 )
 BreadcrumbSeparator.displayName = "BreadcrumbSeparator"
 
-const BreadcrumbEllipsis = ({
-  className,
-  ...props
-}) => (
+const BreadcrumbEllipsis = ({ className, ...props }) => (
   <span
     role="presentation"
     aria-hidden="true"
@@ -79,7 +71,8 @@ const BreadcrumbEllipsis = ({
     <span className="sr-only">More</span>
   </span>
 )
-BreadcrumbEllipsis.displayName = "BreadcrumbElipssis"
+// FIX: was "BreadcrumbElipssis" (double-s typo)
+BreadcrumbEllipsis.displayName = "BreadcrumbEllipsis"
 
 export {
   Breadcrumb,

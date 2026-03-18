@@ -5,12 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
+import { toast } from 'sonner';
 import axios from 'axios';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { 
-  Wallet as WalletIcon, 
-  TrendingUp, 
+import {
+  Wallet as WalletIcon,
+  TrendingUp,
   TrendingDown,
   Download,
   CreditCard,
@@ -64,22 +65,29 @@ export default function WalletPage() {
     </Card>
   );
 
+  // FIX: use try/finally to guarantee the temporary <a> element is always
+  // removed from the DOM even if URL creation or click throws an error.
   const handleExport = async () => {
+    let url = null;
+    let link = null;
     try {
-      const response = await axios.get(`${API}/wallet/export`, { 
+      const response = await axios.get(`${API}/wallet/export`, {
         withCredentials: true,
         responseType: 'blob'
       });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
+      url = window.URL.createObjectURL(new Blob([response.data]));
+      link = document.createElement('a');
       link.href = url;
       link.setAttribute('download', 'savyn_releve.csv');
       document.body.appendChild(link);
       link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Export error:', error);
+      toast.error('Erreur lors de l\'export — veuillez réessayer');
+    } finally {
+      // Always clean up, whether the export succeeded or failed
+      if (link && link.parentNode) link.parentNode.removeChild(link);
+      if (url) window.URL.revokeObjectURL(url);
     }
   };
 
@@ -123,32 +131,10 @@ export default function WalletPage() {
           animate={{ opacity: 1, y: 0 }}
           className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8"
         >
-          <StatCard
-            icon={WalletIcon}
-            title={t('wallet.balance')}
-            value={`${wallet?.net_balance?.toFixed(2) || '0.00'}€`}
-            color={wallet?.net_balance >= 0 ? 'bg-green-600' : 'bg-red-600'}
-            trend={wallet?.net_balance}
-          />
-          <StatCard
-            icon={ArrowUpRight}
-            title={t('wallet.contributed')}
-            value={`${wallet?.total_contributed?.toFixed(2) || '0.00'}€`}
-            color="bg-[#D4A373]"
-          />
-          <StatCard
-            icon={ArrowDownLeft}
-            title={t('wallet.received')}
-            value={`${wallet?.total_received?.toFixed(2) || '0.00'}€`}
-            color="bg-green-600"
-          />
-          <StatCard
-            icon={CreditCard}
-            title={t('wallet.fees')}
-            value={`${wallet?.total_fees_paid?.toFixed(2) || '0.00'}€`}
-            subtitle="Frais de garantie"
-            color="bg-gray-600"
-          />
+          <StatCard icon={WalletIcon} title={t('wallet.balance')} value={`${wallet?.net_balance?.toFixed(2) || '0.00'}€`} color={wallet?.net_balance >= 0 ? 'bg-green-600' : 'bg-red-600'} trend={wallet?.net_balance} />
+          <StatCard icon={ArrowUpRight} title={t('wallet.contributed')} value={`${wallet?.total_contributed?.toFixed(2) || '0.00'}€`} color="bg-[#D4A373]" />
+          <StatCard icon={ArrowDownLeft} title={t('wallet.received')} value={`${wallet?.total_received?.toFixed(2) || '0.00'}€`} color="bg-green-600" />
+          <StatCard icon={CreditCard} title={t('wallet.fees')} value={`${wallet?.total_fees_paid?.toFixed(2) || '0.00'}€`} subtitle="Frais de garantie" color="bg-gray-600" />
         </motion.div>
 
         {/* Recent Transactions */}
@@ -185,15 +171,9 @@ export default function WalletPage() {
                         <TableCell>
                           <div className="flex items-center gap-2">
                             {tx.type === 'contribution' ? (
-                              <>
-                                <ArrowUpRight className="w-4 h-4 text-[#D4A373]" />
-                                <span>Contribution</span>
-                              </>
+                              <><ArrowUpRight className="w-4 h-4 text-[#D4A373]" /><span>Contribution</span></>
                             ) : (
-                              <>
-                                <ArrowDownLeft className="w-4 h-4 text-green-600" />
-                                <span>Paiement reçu</span>
-                              </>
+                              <><ArrowDownLeft className="w-4 h-4 text-green-600" /><span>Paiement reçu</span></>
                             )}
                           </div>
                         </TableCell>
@@ -207,13 +187,11 @@ export default function WalletPage() {
                           {tx.guarantee_fee?.toFixed(2) || '0.00'}€
                         </TableCell>
                         <TableCell>
-                          <Badge 
-                            className={
-                              tx.payment_status === 'paid' ? 'bg-green-100 text-green-700' :
-                              tx.payment_status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
-                              'bg-gray-100 text-gray-700'
-                            }
-                          >
+                          <Badge className={
+                            tx.payment_status === 'paid' ? 'bg-green-100 text-green-700' :
+                            tx.payment_status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-gray-100 text-gray-700'
+                          }>
                             {tx.payment_status === 'paid' ? 'Payé' :
                              tx.payment_status === 'pending' ? 'En attente' :
                              tx.payment_status}

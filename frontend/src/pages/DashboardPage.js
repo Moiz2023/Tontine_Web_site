@@ -8,10 +8,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Progress } from '../components/ui/progress';
 import { Badge } from '../components/ui/badge';
 import axios from 'axios';
-import { 
-  Users, 
-  CreditCard, 
-  TrendingUp, 
+import {
+  Users,
+  CreditCard,
+  TrendingUp,
   Calendar,
   ArrowRight,
   Plus,
@@ -50,7 +50,7 @@ const StatCard = ({ icon: Icon, title, value, subtitle, color, delay }) => (
 const TontineCard = ({ tontine, t }) => {
   const progress = (tontine.participants?.length || 0) / tontine.max_participants * 100;
   const navigate = useNavigate();
-  
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -69,13 +69,13 @@ const TontineCard = ({ tontine, t }) => {
           {tontine.status === 'active' ? t('tontine.status_active') : t('tontine.status_open')}
         </Badge>
       </div>
-      
+
       <div className="space-y-4">
         <div className="flex items-center justify-between text-sm">
           <span className="text-gray-500">{t('tontine.monthly_amount')}</span>
           <span className="font-semibold text-[#2E5C55]">{tontine.monthly_amount}€</span>
         </div>
-        
+
         <div>
           <div className="flex items-center justify-between text-sm mb-2">
             <span className="text-gray-500">{t('tontine.participants')}</span>
@@ -83,7 +83,7 @@ const TontineCard = ({ tontine, t }) => {
           </div>
           <Progress value={progress} className="h-2" />
         </div>
-        
+
         {tontine.user_position && (
           <div className="flex items-center justify-between text-sm pt-2 border-t border-gray-100">
             <span className="text-gray-500">{t('dashboard.your_position')}</span>
@@ -97,14 +97,25 @@ const TontineCard = ({ tontine, t }) => {
 
 export default function DashboardPage() {
   const { t } = useLanguage();
-  const { user, loading: authLoading, checkAuth } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [tontines, setTontines] = useState([]);
   const [wallet, setWallet] = useState(null);
   const [trustScore, setTrustScore] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // FIX: only fetch data when the user is KYC-verified.
+  // Previously the effect ran unconditionally, firing 3 API calls even
+  // when the component was about to render the KYC wall.
   useEffect(() => {
+    if (authLoading) return; // wait until auth context is ready
+
+    // If user is not KYC-verified, skip all API calls — they'll see the wall
+    if (user?.kyc_status !== 'verified') {
+      setLoading(false);
+      return;
+    }
+
     const fetchData = async () => {
       try {
         const [tontinesRes, walletRes, trustRes] = await Promise.all([
@@ -121,8 +132,9 @@ export default function DashboardPage() {
         setLoading(false);
       }
     };
+
     fetchData();
-  }, []);
+  }, [authLoading, user?.kyc_status]);
 
   // Wait for auth to fully load
   if (authLoading) {
@@ -136,7 +148,7 @@ export default function DashboardPage() {
     );
   }
 
-  // KYC Warning - only show after auth is fully loaded
+  // KYC wall — shown after auth is fully loaded, no wasted API calls
   if (user?.kyc_status !== 'verified') {
     return (
       <div className="min-h-screen bg-[#F9FAFB] p-6" data-testid="dashboard-kyc-required">
@@ -182,37 +194,12 @@ export default function DashboardPage() {
           <p className="text-gray-600">Voici un aperçu de vos tontines et de votre activité.</p>
         </motion.div>
 
-        {/* Stats Grid - Bento Layout */}
+        {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <StatCard
-            icon={Users}
-            title={t('dashboard.active_tontines')}
-            value={tontines.length}
-            color="bg-[#2E5C55]"
-            delay={0}
-          />
-          <StatCard
-            icon={CreditCard}
-            title={t('dashboard.total_contributed')}
-            value={`${wallet?.total_contributed?.toFixed(2) || '0.00'}€`}
-            color="bg-[#D4A373]"
-            delay={0.1}
-          />
-          <StatCard
-            icon={TrendingUp}
-            title={t('dashboard.total_received')}
-            value={`${wallet?.total_received?.toFixed(2) || '0.00'}€`}
-            color="bg-green-600"
-            delay={0.2}
-          />
-          <StatCard
-            icon={Star}
-            title={t('dashboard.trust_score')}
-            value={trustScore?.trust_score || 50}
-            subtitle={trustScore?.level}
-            color="bg-blue-600"
-            delay={0.3}
-          />
+          <StatCard icon={Users} title={t('dashboard.active_tontines')} value={tontines.length} color="bg-[#2E5C55]" delay={0} />
+          <StatCard icon={CreditCard} title={t('dashboard.total_contributed')} value={`${wallet?.total_contributed?.toFixed(2) || '0.00'}€`} color="bg-[#D4A373]" delay={0.1} />
+          <StatCard icon={TrendingUp} title={t('dashboard.total_received')} value={`${wallet?.total_received?.toFixed(2) || '0.00'}€`} color="bg-green-600" delay={0.2} />
+          <StatCard icon={Star} title={t('dashboard.trust_score')} value={trustScore?.trust_score || 50} subtitle={trustScore?.level} color="bg-blue-600" delay={0.3} />
         </div>
 
         {/* Trust Score Card */}
@@ -265,19 +252,10 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-semibold text-gray-900">{t('dashboard.active_tontines')}</h2>
             <div className="flex gap-3">
-              <Button
-                variant="outline"
-                onClick={() => navigate('/marketplace')}
-                className="rounded-full"
-                data-testid="dashboard-marketplace-btn"
-              >
+              <Button variant="outline" onClick={() => navigate('/marketplace')} className="rounded-full" data-testid="dashboard-marketplace-btn">
                 Voir le marketplace
               </Button>
-              <Button
-                onClick={() => navigate('/create')}
-                className="bg-[#2E5C55] hover:bg-[#254a44] text-white rounded-full"
-                data-testid="dashboard-create-btn"
-              >
+              <Button onClick={() => navigate('/create')} className="bg-[#2E5C55] hover:bg-[#254a44] text-white rounded-full" data-testid="dashboard-create-btn">
                 <Plus className="w-5 h-5 mr-2" />
                 {t('nav.create')}
               </Button>
@@ -294,18 +272,10 @@ export default function DashboardPage() {
               <h3 className="text-xl font-semibold text-gray-900 mb-2">{t('dashboard.no_tontines')}</h3>
               <p className="text-gray-500 mb-6">Rejoignez une tontine existante ou créez la vôtre.</p>
               <div className="flex justify-center gap-4">
-                <Button
-                  variant="outline"
-                  onClick={() => navigate('/marketplace')}
-                  className="rounded-full"
-                  data-testid="dashboard-join-btn"
-                >
+                <Button variant="outline" onClick={() => navigate('/marketplace')} className="rounded-full" data-testid="dashboard-join-btn">
                   {t('dashboard.join_now')}
                 </Button>
-                <Button
-                  onClick={() => navigate('/create')}
-                  className="bg-[#2E5C55] hover:bg-[#254a44] text-white rounded-full"
-                >
+                <Button onClick={() => navigate('/create')} className="bg-[#2E5C55] hover:bg-[#254a44] text-white rounded-full">
                   <Plus className="w-5 h-5 mr-2" />
                   Créer une tontine
                 </Button>
@@ -328,10 +298,7 @@ export default function DashboardPage() {
         >
           <h2 className="text-xl font-semibold text-gray-900 mb-6">Actions rapides</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Card 
-              className="bg-white rounded-2xl border border-gray-100 shadow-sm cursor-pointer card-hover"
-              onClick={() => navigate('/wallet')}
-            >
+            <Card className="bg-white rounded-2xl border border-gray-100 shadow-sm cursor-pointer card-hover" onClick={() => navigate('/wallet')}>
               <CardContent className="p-6 flex items-center gap-4">
                 <div className="w-12 h-12 rounded-xl bg-[#2E5C55]/10 flex items-center justify-center">
                   <Wallet className="w-6 h-6 text-[#2E5C55]" />
@@ -344,10 +311,7 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
 
-            <Card 
-              className="bg-white rounded-2xl border border-gray-100 shadow-sm cursor-pointer card-hover"
-              onClick={() => navigate('/marketplace')}
-            >
+            <Card className="bg-white rounded-2xl border border-gray-100 shadow-sm cursor-pointer card-hover" onClick={() => navigate('/marketplace')}>
               <CardContent className="p-6 flex items-center gap-4">
                 <div className="w-12 h-12 rounded-xl bg-[#D4A373]/10 flex items-center justify-center">
                   <Users className="w-6 h-6 text-[#D4A373]" />
@@ -360,10 +324,7 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
 
-            <Card 
-              className="bg-white rounded-2xl border border-gray-100 shadow-sm cursor-pointer card-hover"
-              onClick={() => navigate('/support')}
-            >
+            <Card className="bg-white rounded-2xl border border-gray-100 shadow-sm cursor-pointer card-hover" onClick={() => navigate('/support')}>
               <CardContent className="p-6 flex items-center gap-4">
                 <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center">
                   <Calendar className="w-6 h-6 text-blue-600" />
